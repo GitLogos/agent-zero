@@ -1,8 +1,11 @@
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,3 +93,66 @@ def test_smoke_directory_does_not_shadow_stdlib_profile():
         [sys.executable, "-c", script, str(directory), str(directory / "smoke.py")],
         check=True, timeout=30,
     )
+
+
+@pytest.fixture
+def smoke_module():
+    spec = importlib.util.spec_from_file_location("image_smoke", ROOT / "docker" / "slim" / "smoke.py")
+    smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke)
+    return smoke
+
+
+def test_baseline_checks_do_not_skip_independent_features_after_office_failure(monkeypatch, smoke_module):
+    smoke = smoke_module
+    monkeypatch.setitem(sys.modules, "helpers", SimpleNamespace(
+        runtime=SimpleNamespace(initialize=lambda: None),
+    ))
+    monkeypatch.setattr(sys, "argv", ["smoke.py", "--baseline"])
+    reached = []
+    results = {}
+
+    def check(name):
+        def execute():
+            reached.append(name)
+            if name == "office_exports":
+                raise RuntimeError("Office failed")
+        return execute
+
+    names = ["runtimes", "offline_memory", "office_exports", "document_parsing", "ocr", "ffmpeg"]
+    for name in names:
+        monkeypatch.setattr(smoke, name, check(name))
+    monkeypatch.setattr(smoke, "Path", lambda _: SimpleNamespace(
+        write_text=lambda content: results.update(json.loads(content)),
+    ))
+
+    with pytest.raises(AssertionError):
+        smoke.main()
+
+    assert reached == names
+    assert results["office_exports"] == {"passed": False, "error": "Office failed"}
+    assert all(results[name]["passed"] for name in names if name != "office_exports")
+
+
+def test_office_diagnostics_isolate_safe_mode_vcl_and_profile(tmp_path, monkeypatch, smoke_module, capsys):
+    source = tmp_path / "source.odt"
+    source.write_bytes(b"fixture")
+    calls = []
+
+    def execute(args, **kwargs):
+        calls.append((args, kwargs))
+        output = Path(args[args.index("--outdir") + 1]) / "source.docx"
+        output.write_bytes(b"converted")
+        return SimpleNamespace(returncode=0, stdout="converted", stderr="")
+
+    monkeypatch.setattr(smoke_module.subprocess, "run", execute)
+
+    smoke_module.diagnose_office_conversion("soffice", source, "docx", tmp_path)
+
+    assert len(calls) == 8
+    assert {
+        ("--safe-mode" in args, kwargs["env"].get("SAL_USE_VCLPLUGIN"),
+         any(arg.startswith("-env:UserInstallation=") for arg in args))
+        for args, kwargs in calls
+    } == {(safe, vcl, isolated) for safe in (True, False) for vcl in ("gen", None) for isolated in (False, True)}
+    assert capsys.readouterr().out.count('"output_exists": true') == 8

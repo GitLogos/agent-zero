@@ -60,12 +60,43 @@ def offline_memory():
     print(run(sys.executable, __file__, "--offline-memory", "--dockerized=true", env=env))
 
 
-def office_and_ocr():
+def diagnose_office_conversion(soffice, source, target, root):
+    for safe_mode in (True, False):
+        for vcl in ("gen", None):
+            for isolated in (False, True):
+                label = f"safe-{safe_mode}-vcl-{vcl}-isolated-{isolated}"
+                output = root / label
+                output.mkdir()
+                args = [soffice]
+                if isolated:
+                    args.append(f"-env:UserInstallation={(output / 'profile').as_uri()}")
+                args.append("--headless")
+                if safe_mode:
+                    args.append("--safe-mode")
+                args.extend(["--convert-to", target, "--outdir", str(output), str(source)])
+                env = {**os.environ, "HOME": os.environ.get("HOME") or "/tmp"}
+                if vcl:
+                    env["SAL_USE_VCLPLUGIN"] = vcl
+                else:
+                    env.pop("SAL_USE_VCLPLUGIN", None)
+                diagnostic = {"safe_mode": safe_mode, "vcl": vcl, "isolated_profile": isolated}
+                try:
+                    process = subprocess.run(args, text=True, capture_output=True, timeout=20, env=env)
+                except subprocess.TimeoutExpired:
+                    diagnostic["error"] = "LibreOffice invocation timed out after 20 seconds"
+                else:
+                    diagnostic.update({
+                        "exit_code": process.returncode,
+                        "stdout": process.stdout,
+                        "stderr": process.stderr,
+                        "output_exists": (output / source.with_suffix("." + target).name).exists(),
+                    })
+                print(json.dumps(diagnostic, indent=2), flush=True)
+
+
+def office_exports():
     import pymupdf
-    from PIL import Image, ImageDraw, ImageFont
     from plugins._office.helpers import document_store, libreoffice
-    from unstructured.partition.docx import partition_docx
-    from unstructured.partition.pdf import partition_pdf
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -81,21 +112,8 @@ def office_and_ocr():
                 print(f"Converting {odf} to {target}", flush=True)
                 converted = libreoffice.convert_document(source, target, root)
                 if not converted["ok"]:
-                    diagnostic = subprocess.run(
-                        [
-                            libreoffice.find_soffice(),
-                            f"-env:UserInstallation={Path(root, 'isolated-profile').as_uri()}",
-                            "--headless", "--convert-to", target, "--outdir", str(root), str(source),
-                        ],
-                        text=True, capture_output=True, timeout=60,
-                    )
-                    print(json.dumps({
-                        "isolated_cli_exit": diagnostic.returncode,
-                        "isolated_cli_stdout": diagnostic.stdout,
-                        "isolated_cli_stderr": diagnostic.stderr,
-                        "isolated_cli_output_exists": source.with_suffix("." + target).exists(),
-                        "framework_conversion_result": converted,
-                    }, indent=2), flush=True)
+                    print(json.dumps({"framework_conversion_result": converted}, indent=2), flush=True)
+                    diagnose_office_conversion(libreoffice.find_soffice(), source, target, root)
                 assert converted["ok"], converted
                 output = Path(converted["path"])
                 assert output.stat().st_size > 100, output
@@ -105,21 +123,50 @@ def office_and_ocr():
                 else:
                     with zipfile.ZipFile(output) as archive:
                         assert member in archive.namelist()
-        docx = root / "IMAGE-SMOKE-odt.docx"
+    print("Writer/Calc/Impress export OOXML and PDF.")
+
+
+def document_parsing():
+    import pymupdf
+    from plugins._office.helpers import document_store
+    from unstructured.partition.docx import partition_docx
+    from unstructured.partition.pdf import partition_pdf
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        docx = root / "parsing.docx"
+        docx.write_bytes(document_store.template_bytes(
+            "document", "docx", "IMAGE SMOKE", "Image verification content"
+        ))
         assert "verification" in " ".join(str(item) for item in partition_docx(filename=str(docx)))
-        pdf = root / "IMAGE-SMOKE-odt.pdf"
+        pdf = root / "parsing.pdf"
+        with pymupdf.open() as document:
+            document.new_page().insert_text((72, 72), "Image verification content")
+            document.save(pdf)
         assert "verification" in " ".join(str(item) for item in partition_pdf(filename=str(pdf), strategy="fast"))
+    print("Unstructured DOCX/PDF parsing works.")
+
+
+def ocr():
+    from PIL import Image, ImageDraw, ImageFont
+
+    with tempfile.TemporaryDirectory() as directory:
         image = Image.new("RGB", (1300, 180), "white")
         draw = ImageDraw.Draw(image)
         font_path = run("fc-match", "-f", "%{file}", "DejaVu Sans")
         draw.text((30, 50), "AGENT ZERO 31415", fill="black", font=ImageFont.truetype(font_path, 70))
-        png = root / "ocr.png"
+        png = Path(directory, "ocr.png")
         image.save(png)
         assert "31415" in run("tesseract", str(png), "stdout", "--psm", "6")
-        audio = root / "tone.wav"
+    print("Tesseract recognizes rendered text.")
+
+
+def ffmpeg():
+    with tempfile.TemporaryDirectory() as directory:
+        audio = Path(directory, "tone.wav")
         run("ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=duration=1", str(audio))
         assert audio.stat().st_size > 1000
-    print("Writer/Calc/Impress export OOXML and PDF; DOCX/PDF parsing, OCR and ffmpeg work.")
+    print("ffmpeg generates an audio file.")
 
 
 def plugin_hooks():
@@ -232,13 +279,19 @@ def main():
         cases = {
             "runtimes": runtimes,
             "offline_memory": offline_memory,
-            "office_ocr_parsing_ffmpeg": office_and_ocr,
+            "office_exports": office_exports,
+            "document_parsing": document_parsing,
+            "ocr": ocr,
+            "ffmpeg": ffmpeg,
         }
     else:
         cases = {
             "runtimes": runtimes,
             "offline_memory": offline_memory,
-            "office_ocr_parsing_ffmpeg": office_and_ocr,
+            "office_exports": office_exports,
+            "document_parsing": document_parsing,
+            "ocr": ocr,
+            "ffmpeg": ffmpeg,
             "plugin_hooks": plugin_hooks,
             "browser_headless_and_interactive": lambda: asyncio.run(browser()),
             "live_office": live_office,

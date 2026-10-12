@@ -53,6 +53,8 @@ layer history, filesystem allocation, APT installed-size metadata, Python packag
 inventories, UV hardlink accounting, ELF section sizes, and smoke/startup logs.
 Baseline memory/Office checks distinguish existing failures from candidate
 regressions; they never waive a failing candidate publication gate.
+Office export, document parsing, OCR, and ffmpeg run independently, so an import
+or conversion failure cannot prevent the other features from being exercised.
 
 Compare **uncompressed Docker image `Size`**, not compressed registry transfer
 size. Merged `du` allocation excludes deleted lower-layer bytes and includes

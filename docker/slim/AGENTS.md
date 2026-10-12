@@ -31,6 +31,8 @@
 ## Verification
 
 - Build the image on Linux and run real feature checks before publication.
+- Keep Office export, document parsing, OCR, and ffmpeg checks independent so a failure does not hide the other features' results.
+- Diagnose failed Office exports by varying safe mode, VCL selection, and profile isolation independently; diagnostic CLI success does not waive a failing framework helper.
 - Record Docker `Size`, registry compressed layer bytes, and merged filesystem usage.
 - Run `pytest tests/test_image_footprint_checks.py` for inventory hardlinks, ELF section accounting, and check-runner module-shadowing regressions.
 
