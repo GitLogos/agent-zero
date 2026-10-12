@@ -65,7 +65,7 @@ const model = {
       }
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
-      if (this.config.backend === "local") this.unregisterProvider();
+      if (this.config.backend === "local" && this.localAvailable) this.unregisterProvider();
       if (!suppressError) {
         void toastFrontendError(this.error, "Kokoro TTS");
       }

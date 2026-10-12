@@ -137,6 +137,11 @@ Labels `io.agent-zero.include-*`, `/api/health` and plugin status expose the pro
 Startup, normal prepare hooks and self-update reconciliation cannot re-enable
 excluded assets. A mounted profile still selecting an unavailable local/internal
 backend gets an explicit error: **provider choices are never switched silently**.
+Lean-profile updates to releases without the six-feature contract are rejected
+before preparation (using normal update rollback). Use a compatible fork/release
+or rebuild all-enabled. The installed manager also checks the target's updater
+guard, so startup synchronization cannot replace it with an unguarded older manager.
+Legacy/all-enabled images keep their existing update behavior.
 Configure external STT/TTS in their existing plugin settings using base URL,
 model, optional API key, and TTS voice; see the plugin READMEs for upload/privacy
 semantics. External GPU-provider connectivity is unchanged.

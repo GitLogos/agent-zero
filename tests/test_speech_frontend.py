@@ -212,6 +212,14 @@ vm.runInThisContext(source);
   assert.equal(provider.allowBrowserFallback(), true);
   store.config.backend = "openai";
   assert.equal(provider.allowBrowserFallback(), false);
+  store.config.backend = "local";
+  store.localAvailable = false;
+  store.statusLoaded = true;
+  const cleanup = store.providerCleanup;
+  global.callJsonApi = async () => { throw new Error("Status unavailable"); };
+  await store.refreshStatus({ suppressError: true });
+  assert.equal(store.providerCleanup, cleanup);
+  assert.equal(provider.allowBrowserFallback(), false);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)

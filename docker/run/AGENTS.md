@@ -21,6 +21,7 @@
 - `install_A0.sh` optionally accepts `A0_WHISPER_WHEEL`; the existing wheel must resolve normally alongside all root requirements. Standard builds omit it and retain upstream package installation.
 - Profile builds create `/etc/a0-image-features.json` before installation/preload. `select_image_requirements.py` omits only disabled local speech roots, preserving normal resolution of shared dependencies; package/browser scripts honor six default-true `A0_INCLUDE_*` flags.
 - `configure_image_features.py` removes excluded inherited SearXNG before root export and reapplies its supervisor exclusion after startup restores `/per`; source updates and mounted user settings do not overwrite the manifest.
+- The installed self-update manager verifies lean-profile source supports all six persistent capabilities and preserves the pre-hook updater guard before cleanup/preparation. Incompatible old/upstream releases use existing rollback, rather than reinstalling omissions; checking the target manager prevents startup synchronization dropping the guard. Legacy/all-enabled updates are unchanged.
 - Preserve exposed ports for SSH, HTTP, and tunneled services unless docs and workflows are updated together.
 - Keep the two-runtime Python model aligned with the root contract.
 - For v2.13 builds, retain the Python 3.13-compatible ATK, LibreOffice/UNO, and Xpra pins in `fs/ins/install_additional.sh`. Resolve them from the signed Debian `forky` archive dated `20260624T000000Z` and Xpra `trixie`, using build-scoped APT options that preserve normal Kali sources.

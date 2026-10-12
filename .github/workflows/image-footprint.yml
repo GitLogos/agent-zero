@@ -221,7 +221,8 @@ jobs:
               tests/test_libreoffice_conversion.py
             /opt/venv-a0/bin/python -m pytest -q \
               tests/test_image_features.py tests/test_image_feature_runtime.py \
-              tests/test_plugin_activation_ui.py tests/test_plugin_hook_context.py
+              tests/test_plugin_activation_ui.py tests/test_plugin_hook_context.py \
+              tests/test_self_update_runtime_sync.py tests/test_self_update_tag_filter.py
           ' 2>&1 | tee measurements/targeted-tests.log
       - name: Run real retained-feature and omission checks
         if: always() && steps.startup.outcome == 'success'

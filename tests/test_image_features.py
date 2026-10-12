@@ -23,6 +23,7 @@ def load_module(name, relative):
 profile = load_module("image_profile", "docker/slim/image_profile.py")
 selection = load_module("image_selection", "docker/run/fs/ins/select_image_requirements.py")
 configuration = load_module("image_configuration", "docker/run/fs/ins/configure_image_features.py")
+updates = load_module("image_updates", "docker/run/fs/exe/self_update_manager.py")
 
 
 @pytest.fixture(autouse=True)
@@ -127,3 +128,46 @@ def test_feature_bootstrap_uses_only_standard_library():
         [sys.executable, "-S", str(ROOT / "docker/run/fs/ins/configure_image_features.py"), "--help"],
         check=True, capture_output=True, timeout=30,
     )
+
+
+def test_lean_source_updates_cannot_run_legacy_hooks_that_reinstall_features(tmp_path, monkeypatch):
+    manifest = tmp_path / "features.json"
+    manifest.write_text(json.dumps(dict.fromkeys(image_features.FEATURES, False)))
+    monkeypatch.setattr(updates, "IMAGE_FEATURE_MANIFEST", manifest)
+    updates.verify_image_profile_source(ROOT)
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    calls = []
+    monkeypatch.setattr(updates, "run_office_cleanup_hook", lambda *args: calls.append("cleanup"))
+    with pytest.raises(RuntimeError, match="prevent reinstalling"):
+        updates.launch_ui_process(legacy, None)
+    assert not calls
+    (legacy / "helpers").mkdir()
+    (legacy / "helpers" / "image_features.py").write_text("FEATURES = ('desktop', 'office')\n")
+    with pytest.raises(RuntimeError, match="compatible fork"):
+        updates.verify_image_profile_source(legacy)
+    (legacy / "helpers" / "image_features.py").write_text(f"FEATURES = {image_features.FEATURES!r}\n")
+    with pytest.raises(RuntimeError, match="compatible fork"):
+        updates.verify_image_profile_source(legacy)
+    manager = legacy / "docker" / "run" / "fs" / "exe" / "self_update_manager.py"
+    manager.parent.mkdir(parents=True)
+    for source in (
+        "def launch_ui_process(repo_dir, logger):\n    run_office_cleanup_hook(repo_dir, logger)\n",
+        "def verify_image_profile_source(repo_dir):\n    pass\n"
+        "def launch_ui_process(repo_dir, logger):\n"
+        "    run_office_cleanup_hook(repo_dir, logger)\n    verify_image_profile_source(repo_dir)\n",
+    ):
+        manager.write_text(source)
+        with pytest.raises(RuntimeError, match="compatible fork"):
+            updates.verify_image_profile_source(legacy)
+    manager.write_text((ROOT / "docker/run/fs/exe/self_update_manager.py").read_text())
+    updates.verify_image_profile_source(legacy)
+    (legacy / "helpers" / "image_features.py").write_text(
+        "FEATURES = (['desktop'], 'office', 'whisper', 'kokoro', 'chromium', 'searxng')\n"
+    )
+    with pytest.raises(RuntimeError, match="compatible fork"):
+        updates.verify_image_profile_source(legacy)
+    manifest.write_text(json.dumps(dict.fromkeys(image_features.FEATURES, True)))
+    updates.verify_image_profile_source(legacy)
+    manifest.unlink()
+    updates.verify_image_profile_source(legacy)

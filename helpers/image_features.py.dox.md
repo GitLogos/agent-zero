@@ -13,6 +13,7 @@
 - Desktop exclusions do not exclude Browser's shared Xpra/Xvfb runtime; Office exclusions do not remove pure document storage/parsing libraries.
 - Speech exclusions leave external backends available without importing local libraries. Excluded Chromium cannot be reconciled/downloaded; excluded search requires an explicit external endpoint.
 - Health/status reports only public capability booleans/reasons, never private configuration.
+- Keep `FEATURES` a declarative tuple: lean-image bootstrap/update checks inspect this protocol and the target manager's pre-hook guard without executing target code. Unsupported source fails before preparation or manager synchronization can drop omission guards.
 
 ## Verification
 

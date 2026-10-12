@@ -22,6 +22,7 @@
 - Preserve `voice` and `speed` configuration compatibility; weighted blends stay in memory and use positive finite weights.
 - Validate external voice/speed consistently in status and synthesis; legacy local speed defaults must not hide invalid remote settings.
 - Images may omit local Kokoro; status/settings expose local availability, preload cannot import/download it, and selected local mode reports an explicit error. External synthesis works without Kokoro. Responses expose authoritative `allow_browser_fallback` to protect against stale frontend state.
+- A failed status refresh must not unregister a previously known build-excluded local provider: that would silently enable browser fallback.
 
 ## Work Guidance
 

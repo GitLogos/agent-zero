@@ -23,7 +23,7 @@
 - Keep experimental tags separate from stable images until functional checks succeed.
 - Diagnostics and push-triggered runs do not publish; experimental publishing additionally requires explicit manual dispatch opt-in.
 - Preserve Agent Zero Git metadata for versioning, self-update, and rollback.
-- This candidate's approved Triton omission uses `openai-whisper==20250625+a0cpu.1`, preserving every upstream code/asset byte and normal dependency resolution. Triton is optional under `cuda`; no other root speech package is removed, and local CPU speech stays the default.
+- Included local Whisper uses the approved `openai-whisper==20250625+a0cpu.1`, preserving every upstream code/asset byte and normal resolution with Triton optional under `cuda`. Other speech roots are omitted only by their approved profile flags; included local CPU engines keep their defaults.
 - Preserve the CPU wheel/provenance under `/opt/a0-wheels` and installed `a0-cpu-provenance.json`; source hash, recipe hash and code/asset digests make the modification auditable.
 - Six independently approved default-on options may exclude Desktop, LibreOffice/UNO, local Whisper, local Kokoro, Chromium binary and bundled SearXNG. Do not remove any other component or rewrite saved provider choices. Retain shared Xpra/Xvfb, document parsers, runtimes and compiler tools.
 - The persistent manifest, image labels and health/status must agree. Disabled assets/packages must actually be absent and remain absent after ordinary startup, hooks and dependency reconciliation.

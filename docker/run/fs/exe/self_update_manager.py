@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import os
@@ -28,6 +29,7 @@ OFFICIAL_REPO_URL = os.environ.get(
     "https://github.com/agent0ai/agent-zero.git",
 )
 REPO_DIR = Path("/a0")
+IMAGE_FEATURE_MANIFEST = Path("/etc/a0-image-features.json")
 TRIGGER_FILE = Path("/exe/a0-self-update.yaml")
 STATUS_FILE = Path("/exe/a0-self-update-status.yaml")
 LOG_FILE = Path("/exe/a0-self-update.log")
@@ -939,7 +941,55 @@ def restore_git_state(
     clean_repo_worktree(repo_dir, logger, exclude_paths=exclude_paths)
 
 
+def verify_image_profile_source(repo_dir: Path) -> None:
+    if not IMAGE_FEATURE_MANIFEST.exists():
+        return
+    features = json.loads(IMAGE_FEATURE_MANIFEST.read_text())
+    names = {"desktop", "office", "whisper", "kokoro", "chromium", "searxng"}
+    if (
+        not isinstance(features, dict) or set(features) != names
+        or any(type(value) is not bool for value in features.values())
+    ):
+        raise RuntimeError("Invalid persistent image feature manifest.")
+    if all(features.values()):
+        return
+    try:
+        tree = ast.parse((repo_dir / "helpers" / "image_features.py").read_text())
+        declared = next(
+            ast.literal_eval(statement.value)
+            for statement in tree.body
+            if isinstance(statement, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "FEATURES" for target in statement.targets)
+        )
+        manager = ast.parse((repo_dir / "docker" / "run" / "fs" / "exe" / "self_update_manager.py").read_text())
+        launch = next(
+            statement for statement in manager.body
+            if isinstance(statement, ast.FunctionDef) and statement.name == "launch_ui_process"
+        )
+        first = launch.body[0]
+        compatible = (
+            isinstance(declared, tuple) and len(declared) == len(names)
+            and all(isinstance(name, str) for name in declared)
+            and set(declared) == names
+            and any(
+                isinstance(statement, ast.FunctionDef) and statement.name == "verify_image_profile_source"
+                for statement in manager.body
+            )
+            and isinstance(first, ast.Expr) and isinstance(first.value, ast.Call)
+            and isinstance(first.value.func, ast.Name) and first.value.func.id == "verify_image_profile_source"
+        )
+    except (OSError, SyntaxError, ValueError, StopIteration):
+        compatible = False
+    if not compatible:
+        raise RuntimeError(
+            "This component profile requires source with persistent image-feature support. "
+            "Use a compatible fork/release or rebuild an all-enabled image; "
+            "preparation was blocked to prevent reinstalling excluded components."
+        )
+
+
 def launch_ui_process(repo_dir: Path, logger: AttemptLogger) -> subprocess.Popen[bytes]:
+    verify_image_profile_source(repo_dir)
     run_office_cleanup_hook(repo_dir, logger)
 
     prepare_script = repo_dir / "prepare.py"
