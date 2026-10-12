@@ -44,6 +44,7 @@
 - Run `pytest tests/test_image_footprint_checks.py` for inventory hardlinks, ELF section accounting, and check-runner module-shadowing regressions.
 - Check wheel RECORD/payload/default markers and `uv pip check`; native gates require Triton absence and unchanged model choices, plus real local synthesis/transcription and loopback-only external API tests.
 - Cover all-on, all-off and meaningful mixed profiles, including Office without Desktop and Desktop without Office. Execute included capabilities and external speech/search, and check excluded APIs retain security gates; do not claim unavailable features passed.
+- Desktop gateway verification creates sessions through the live WebUI API, not a separate check process: virtual-desktop token registration is process-local. Keep CSRF/cookie handling and explicit session shutdown in the gate.
 
 ## Child DOX Index
 

@@ -277,20 +277,36 @@ def live_office():
 
 
 def desktop():
-    from plugins._desktop.helpers.desktop_session import DesktopSessionManager
+    from plugins._desktop.helpers.desktop_session import PROFILE_DIR, SYSTEM_SESSION_ID
 
-    manager = DesktopSessionManager()
+    origin = "http://127.0.0.1"
+    client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    with client.open(urllib.request.Request(
+        origin + "/api/csrf_token", headers={"Origin": origin}
+    ), timeout=30) as response:
+        token = json.load(response)["token"]
+
+    def api(action):
+        request = urllib.request.Request(
+            origin + "/api/plugins/_desktop/desktop_session",
+            data=json.dumps({"action": action, "save_first": False}).encode(),
+            headers={"Content-Type": "application/json", "Origin": origin, "X-CSRF-Token": token},
+        )
+        with client.open(request, timeout=90) as response:
+            return json.load(response)
+
     try:
-        state = manager.ensure_system_desktop()
-        assert state["available"], state
-        with urllib.request.urlopen("http://127.0.0.1:80" + state["url"], timeout=20) as response:
+        state = api("desktop")
+        assert state["ok"] and state["desktop"]["available"], state
+        assert api("status")["healthy"]
+        with client.open(origin + state["desktop"]["url"], timeout=20) as response:
             assert response.status == 200
-        assert "Terminal.desktop" in {
-            path.name for path in (manager._sessions["agent-zero-desktop"].profile_dir / "Desktop").iterdir()
-        }
+            assert b"html" in response.read(512).lower()
+        assert (PROFILE_DIR / SYSTEM_SESSION_ID / "Desktop" / "Terminal.desktop").is_file()
     finally:
-        manager.shutdown()
-    print("Xfce Desktop starts independently of Office.")
+        result = api("shutdown")
+        assert result["ok"], result
+    print("Live authenticated Desktop API and its viewer work independently of Office.")
 
 
 def image_capabilities():

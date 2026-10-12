@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -12,6 +13,42 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("image_inventory", ROOT / "docker" / "slim" / "inventory.py")
 inventory = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(inventory)
+
+
+def test_desktop_gate_registers_sessions_in_live_server_not_check_process(monkeypatch, tmp_path, smoke_module):
+    profile = tmp_path / "profiles" / "fixture-session" / "Desktop"
+    profile.mkdir(parents=True)
+    (profile / "Terminal.desktop").touch()
+    monkeypatch.setitem(sys.modules, "plugins._desktop.helpers.desktop_session", SimpleNamespace(
+        PROFILE_DIR=tmp_path / "profiles", SYSTEM_SESSION_ID="fixture-session",
+    ))
+    actions = []
+
+    class Client:
+        def open(self, request, timeout):
+            if isinstance(request, str):
+                assert request == "http://127.0.0.1/desktop/fixture/"
+                payload = b"<html>fixture viewer</html>"
+            elif request.full_url.endswith("/api/csrf_token"):
+                payload = json.dumps({"token": "fixture-token"}).encode()
+            else:
+                assert request.full_url.endswith("/api/plugins/_desktop/desktop_session")
+                assert request.get_header("X-csrf-token") == "fixture-token"
+                action = json.loads(request.data)["action"]
+                actions.append(action)
+                result = {
+                    "desktop": {"ok": True, "desktop": {"available": True, "url": "/desktop/fixture/"}},
+                    "status": {"healthy": True},
+                    "shutdown": {"ok": True},
+                }[action]
+                payload = json.dumps(result).encode()
+            response = io.BytesIO(payload)
+            response.status = 200
+            return response
+
+    monkeypatch.setattr(smoke_module.urllib.request, "build_opener", lambda *args: Client())
+    smoke_module.desktop()
+    assert actions == ["desktop", "status", "shutdown"]
 
 
 def fake_file(inode, size, links=1):
