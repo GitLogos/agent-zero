@@ -66,12 +66,21 @@ def normalize_config(config: dict[str, Any] | None) -> dict[str, Any]:
     if normalized["voice_weights"]:
         normalized["voice"] = ",".join(normalized["voice_weights"])
 
-    try:
-        speed = float(config.get("speed", normalized["speed"]))
-        if math.isfinite(speed) and speed > 0:
-            normalized["speed"] = speed
-    except (TypeError, ValueError):
-        pass
+    if normalized["backend"] == "openai":
+        raw_speed = config.get("speed", DEFAULT_CONFIG["speed"])
+        try:
+            speed = float(raw_speed)
+        except (TypeError, ValueError):
+            normalized["speed"] = raw_speed
+        else:
+            normalized["speed"] = speed if math.isfinite(speed) else str(speed)
+    else:
+        try:
+            speed = float(config.get("speed", normalized["speed"]))
+            if math.isfinite(speed) and speed > 0:
+                normalized["speed"] = speed
+        except (TypeError, ValueError):
+            pass
 
     return normalized
 
@@ -136,7 +145,7 @@ async def is_downloading() -> bool:
 async def is_downloaded() -> bool:
     cfg = get_config()
     if external_speech.is_external(cfg):
-        return not external_speech.configuration_error(cfg) and bool(cfg["external_voice"])
+        return not external_speech.configuration_error(cfg, tts=True)
     return _pipeline is not None
 
 
@@ -145,7 +154,7 @@ async def synthesize_sentences(
 ) -> str:
     cfg = normalize_config(config or get_config())
     if external_speech.is_external(cfg):
-        return await external_speech.synthesize(sentences, cfg, float(cfg["speed"]))
+        return await external_speech.synthesize(sentences, cfg, cfg["speed"])
     return await _synthesize_sentences(
         sentences,
         voice=str(cfg["voice"]),

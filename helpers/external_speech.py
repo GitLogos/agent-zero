@@ -88,10 +88,25 @@ def connection(config: dict) -> Connection:
     return Connection(base_url, model, timeout, key)
 
 
-def configuration_error(config: dict) -> str:
+def tts_options(config: dict) -> tuple[str, float]:
+    voice = str(config.get("external_voice", "") or "").strip()
+    if not voice:
+        raise ValueError("External TTS voice is required.")
+    try:
+        speed = float(config.get("speed", 1.1))
+    except (TypeError, ValueError):
+        raise ValueError("OpenAI-compatible TTS speed must be between 0.25 and 4.") from None
+    if not math.isfinite(speed) or not 0.25 <= speed <= 4:
+        raise ValueError("OpenAI-compatible TTS speed must be between 0.25 and 4.")
+    return voice, speed
+
+
+def configuration_error(config: dict, *, tts: bool = False) -> str:
     try:
         if is_external(config):
             connection(config)
+            if tts:
+                tts_options(config)
     except ValueError as exc:
         return str(exc)
     return ""
@@ -176,11 +191,7 @@ async def transcribe(audio_base64: str, config: dict, language: str | None) -> d
 
 async def synthesize(sentences: list[str], config: dict, speed: float) -> str:
     settings = connection(config)
-    voice = str(config.get("external_voice", "") or "").strip()
-    if not voice:
-        raise ValueError("External TTS voice is required.")
-    if not math.isfinite(speed) or not 0.25 <= speed <= 4:
-        raise ValueError("OpenAI-compatible TTS speed must be between 0.25 and 4.")
+    voice, speed = tts_options({**config, "speed": speed})
     text = "\n".join(sentences).strip()
     if not text:
         raise ValueError("Speech text is empty.")

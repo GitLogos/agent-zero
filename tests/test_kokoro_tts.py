@@ -66,6 +66,17 @@ def test_weighted_blend_reuses_the_existing_pipeline() -> None:
     )
 
 
+def test_remote_invalid_speed_is_not_silently_replaced_by_local_default():
+    from helpers import external_speech
+
+    for speed in (-1, None, float("inf"), "invalid"):
+        config = runtime.normalize_config({
+            "backend": "openai", "external_base_url": "http://speech.example/v1",
+            "external_model": "fixture", "external_voice": "fixture", "speed": speed,
+        })
+        assert "speed" in external_speech.configuration_error(config, tts=True)
+
+
 def test_synthesis_forwards_normalized_weights(monkeypatch) -> None:
     captured: dict = {}
 

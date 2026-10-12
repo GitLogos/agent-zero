@@ -17,9 +17,7 @@ class Status(ApiHandler):
             package_error = str(e)
 
         config = runtime.get_config()
-        error = external_speech.configuration_error(config)
-        if not error and config["backend"] == "openai" and not config["external_voice"]:
-            error = "External TTS voice is required."
+        error = external_speech.configuration_error(config, tts=True)
         return {
             "plugin": "_kokoro_tts",
             "enabled": runtime.is_globally_enabled(),

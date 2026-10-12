@@ -136,10 +136,16 @@ def test_bad_speech_audio_is_rejected(monkeypatch, payload):
         asyncio.run(speech.synthesize(["Fixture"], config(), 1.0))
 
 
-@pytest.mark.parametrize("speed", [0.1, 4.1, float("inf")])
+@pytest.mark.parametrize("speed", [0.1, 4.1, float("inf"), -1, None, "invalid"])
 def test_unsupported_remote_speed_is_explicit(speed):
     with pytest.raises(ValueError, match="speed"):
         asyncio.run(speech.synthesize(["Fixture"], config(), speed))
+
+
+def test_status_checks_remote_voice_and_speed_without_a_request():
+    assert "voice" in speech.configuration_error(config(external_voice=""), tts=True)
+    assert "speed" in speech.configuration_error(config(speed=-1), tts=True)
+    assert "speed" in speech.configuration_error(config(speed="inf"), tts=True)
 
 
 def test_limits_and_timeout_errors_are_bounded(monkeypatch):

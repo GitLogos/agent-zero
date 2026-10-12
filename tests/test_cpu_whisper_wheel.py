@@ -6,6 +6,8 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import zipfile
 
 from packaging.requirements import Requirement
@@ -17,6 +19,13 @@ spec = importlib.util.spec_from_file_location(
 )
 recipe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(recipe)
+
+
+def test_build_bootstrap_does_not_require_framework_site_packages():
+    subprocess.run(
+        [sys.executable, "-S", str(Path(recipe.__file__)), "--output", ".", "--help"],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
 
 
 def test_cpu_wheel_preserves_payload_and_moves_only_triton_to_cuda_extra(tmp_path):

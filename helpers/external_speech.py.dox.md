@@ -13,6 +13,7 @@ Provide shared OpenAI-compatible STT/TTS HTTP transport without changing local s
 - `synthesize` sends model/input/voice/speed and validates nonempty WAV output using the existing SoundFile dependency, including PCM/float WAV variants. Local voice blending is not sent to external services; remote voice is a distinct setting.
 - Requests have a total configured timeout, propagate cancellation, never follow redirects, and cap audio uploads/responses at 50 MiB. HTTP/provider failures produce sanitized errors without response bodies, credentials, or automatic local fallback.
 - Runtime status validates configuration only; it never sends provider probes or user data.
+- `tts_options` validates external voice and speed for both synthesis and status; invalid remote speed is not coerced to the local default.
 - Browser stop cancels its fetch/playback; the Flask request already admitted by the server or the provider may continue until completion/timeout. This is not an upload retraction or a provider-side cancellation API.
 
 ## Verification

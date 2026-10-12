@@ -15,8 +15,6 @@ import tempfile
 import urllib.request
 import zipfile
 
-from packaging.requirements import Requirement
-
 
 UPSTREAM_VERSION = "20250625"
 CPU_VERSION = UPSTREAM_VERSION + "+a0cpu.1"
@@ -29,6 +27,8 @@ SOURCE_SHA256 = "37a91a3921809d9f44748ffc73c0a55c9f366c85a3ef5c2ae0cc09540432eb9
 
 
 def repackage(wheel: Path, output_dir: Path) -> Path:
+    from packaging.requirements import Requirement
+
     with zipfile.ZipFile(wheel) as archive:
         entries = {name: archive.read(name) for name in archive.namelist()}
     metadata_paths = [name for name in entries if name.endswith(".dist-info/METADATA")]
@@ -131,12 +131,21 @@ def build(output_dir: Path, requirements: Path) -> Path:
         candidates = list(wheels.glob("openai_whisper-*.whl"))
         if len(candidates) != 1:
             raise ValueError("Expected exactly one built Whisper wheel.")
-        return repackage(candidates[0], output_dir)
+        subprocess.run([
+            str(python), __file__, "--repackage", str(candidates[0]), "--output", str(output_dir),
+        ], check=True)
+        return output_dir / f"openai_whisper-{CPU_VERSION}-py3-none-any.whl"
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--requirements", type=Path, required=True)
+    parser.add_argument("--requirements", type=Path)
+    parser.add_argument("--repackage", type=Path)
     options = parser.parse_args()
-    print(build(options.output, options.requirements))
+    if options.repackage:
+        print(repackage(options.repackage, options.output))
+    elif options.requirements:
+        print(build(options.output, options.requirements))
+    else:
+        parser.error("--requirements is required when building from source")

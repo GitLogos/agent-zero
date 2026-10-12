@@ -54,7 +54,7 @@ docker build -f docker/slim/Dockerfile \
 Run:
 
 ```bash
-docker run -p 5080:80 -v a0_usr:/a0/usr ghcr.io/gitlogos/agent-zero-slim:latest
+docker run -p 5080:80 -v a0_usr:/a0/usr ghcr.io/gitlogos/agent-zero-slim:local
 ```
 
 For an exact source build, pass `--build-arg A0_BUILD_COMMIT=<full-commit-sha>`

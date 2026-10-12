@@ -20,6 +20,7 @@
 - Never expose connection keys in status; external readiness validates configuration without a provider probe. Return truthful WAV audio/MIME and the backend on synthesis responses so stale frontend status cannot cause remote-error fallback.
 - Do not expose generated speech artifacts outside intended response paths.
 - Preserve `voice` and `speed` configuration compatibility; weighted blends stay in memory and use positive finite weights.
+- Validate external voice/speed consistently in status and synthesis; legacy local speed defaults must not hide invalid remote settings.
 
 ## Work Guidance
 

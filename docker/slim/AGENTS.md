@@ -10,6 +10,7 @@
 - `inventory.py` inventories a container filesystem without starting services; do not name it `profile.py`, which shadows a Python standard-library module when checks run beside it.
 - `smoke.py` exercises real features in a disposable started container.
 - `prepare_cpu_whisper.py` builds the hash-pinned upstream source with isolated `whisper-build-requirements.txt` tooling, then changes dependency metadata only.
+- Bootstrap must use only the standard library; requirement parsing/repackaging runs in that isolated builder, not the pre-install framework environment.
 - `README.md` describes supported features and build/measurement commands.
 - `.github/workflows/image-footprint.yml` measures the published amd64 baseline, builds native candidates, and publishes experimental tags only after functional checks.
 

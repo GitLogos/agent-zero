@@ -668,7 +668,7 @@ class MicrophoneInput {
         await this.updateCallback(text, true);
       }
     } catch (error) {
-      if (error?.name === "AbortError") return;
+      if (error?.name === "AbortError" || this.transcriptionController?.signal.aborted || this.status === Status.INACTIVE) return;
       console.error("[Whisper STT] Transcription failed", error);
       window.toastFetchError?.("Transcription error", error);
     } finally {
