@@ -18,6 +18,7 @@
 - Preserve configured message mode, language, silence threshold, silence duration, and waiting timeout behavior.
 - Local CPU Whisper remains the default; explicit `openai` configuration uses `helpers.external_speech` and never falls back on remote failure.
 - Keep connection secrets out of status; external readiness means configured, not connection-tested. External model IDs are not local model-size choices.
+- Settings initialize absent connection fields only; explicit invalid external settings must not silently become local/default settings.
 - Only local model changes trigger local preload; microphone cancellation must suppress stale transcripts without changing send/draft behavior.
 - Keep all `data-whisper-microphone` controls synchronized with the same microphone status.
 - Optional final-transcript handlers must receive the configured draft/send mode without changing the main chat microphone's delivery behavior.

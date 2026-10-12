@@ -28,8 +28,8 @@
       { id: 'am_santa', label: 'Santa', group: 'American Male' },
     ],
     initConfig() {
-      config.backend ??= 'local';
-      config.request_timeout ??= 120;
+      if (config.backend === undefined) config.backend = 'local';
+      if (config.request_timeout === undefined) config.request_timeout = 120;
       if (!config.voice) config.voice = 'am_puck,am_onyx';
       const sanitized = {};
       const weights = config.voice_weights;
@@ -43,8 +43,10 @@
       }
       config.voice_weights = sanitized;
       if (Object.keys(sanitized).length) this.syncVoice(Object.keys(sanitized));
-      const speed = Number(config.speed);
-      config.speed = Number.isFinite(speed) && speed > 0 ? speed : 1.1;
+      if (config.backend === 'local') {
+        const speed = Number(config.speed);
+        config.speed = Number.isFinite(speed) && speed > 0 ? speed : 1.1;
+      }
     },
     voiceIds() {
       const weighted = Object.keys(config.voice_weights || {});

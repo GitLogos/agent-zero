@@ -5,6 +5,41 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_settings_preserve_invalid_external_options_until_explicitly_corrected():
+    script = r"""
+const fs = require("node:fs");
+const vm = require("node:vm");
+const assert = require("node:assert/strict");
+const kokoro = fs.readFileSync("plugins/_kokoro_tts/webui/config.html", "utf8");
+const settings = vm.runInThisContext("(" + kokoro.match(/x-data="([\s\S]*?)"\s*>/)[1] + ")");
+global.config = { backend: "openai", speed: -1, request_timeout: null };
+settings.initConfig();
+assert.equal(config.speed, -1);
+assert.equal(config.request_timeout, null);
+config = { backend: "local", speed: -1 };
+settings.initConfig();
+assert.equal(config.speed, 1.1);
+assert.equal(config.request_timeout, 120);
+config = { backend: null };
+settings.initConfig();
+assert.equal(config.backend, null);
+config = {};
+settings.initConfig();
+assert.equal(config.backend, "local");
+const whisper = fs.readFileSync("plugins/_whisper_stt/webui/config.html", "utf8");
+const initialize = whisper.match(/x-init="([^"]*)"/)[1];
+config = { backend: null, request_timeout: null };
+vm.runInThisContext(initialize);
+assert.equal(config.backend, null);
+assert.equal(config.request_timeout, null);
+config = {};
+vm.runInThisContext(initialize);
+assert.equal(config.backend, "local");
+assert.equal(config.request_timeout, 120);
+"""
+    subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)
+
+
 def test_tts_external_failure_never_falls_back_and_stop_cancels_synthesis():
     script = r"""
 const fs = require("node:fs");

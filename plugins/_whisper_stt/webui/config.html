@@ -6,7 +6,7 @@
 <body>
   <div x-data>
     <template x-if="config">
-      <div class="plugin-config-page" x-init="config.backend ??= 'local'; config.request_timeout ??= 120">
+      <div class="plugin-config-page" x-init="if (config.backend === undefined) config.backend = 'local'; if (config.request_timeout === undefined) config.request_timeout = 120">
         <div class="section-title">Whisper STT</div>
         <div class="section-description">
           Choose local CPU Whisper or an OpenAI-compatible audio service. Browser microphone
