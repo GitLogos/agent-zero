@@ -52,7 +52,13 @@ if [ -n "${A0_WHISPER_WHEEL:-}" ]; then
     fi
     additional_requirements+=("$A0_WHISPER_WHEEL")
 fi
-uv pip install -r /git/agent-zero/requirements.txt "${additional_requirements[@]}"
+requirements=/git/agent-zero/requirements.txt
+if [ -f /etc/a0-image-features.json ]; then
+    requirements=/opt/a0-image-requirements.txt
+    uv run --no-project --with packaging==25.0 --python /opt/venv-a0/bin/python \
+        /ins/select_image_requirements.py /git/agent-zero/requirements.txt "$requirements"
+fi
+uv pip install -r "$requirements" "${additional_requirements[@]}"
 
 # install playwright
 bash /ins/install_playwright.sh "$@"

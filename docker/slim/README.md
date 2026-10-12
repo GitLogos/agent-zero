@@ -11,7 +11,8 @@ The approved speech packaging variant additionally omits mandatory Triton on the
 already CPU-only framework runtime. It retains local Whisper/Kokoro defaults and
 adds opt-in OpenAI-compatible external audio services. External Ollama/vLLM and
 other GPU-backed provider connections are unchanged; no local CUDA runtime is
-installed. No other bundled component is removed.
+installed. Full-functionality builds retain all other components; explicitly
+selected component profiles can omit the six groups described below.
 
 `prepare_cpu_whisper.py` verifies the immutable upstream Whisper 20250625 source
 SHA-256, builds in a temporary isolated environment, and produces
@@ -100,10 +101,61 @@ module: placing a `profile.py` beside the smoke runner breaks imports that use
 
 Push-triggered builds and default manual runs do not publish. Explicit manual
 dispatch with `publish_experimental=true` publishes only candidates passing all
-checks as `experimental-<full-commit-sha>-<architecture>` tags. The multi-architecture
-`experimental-<full-commit-sha>` tag requires both architectures to pass. This
+checks. All-on builds retain `experimental-<full-commit-sha>-<architecture>` tags.
+Other profiles append `-d<0|1>-o<0|1>-w<0|1>-k<0|1>-c<0|1>-s<0|1>` before the
+architecture, in Desktop/Office/Whisper/Kokoro/Chromium/SearXNG order.
+The corresponding architecture-free index tag requires both architectures to pass. This
 workflow never replaces `latest` or the existing stable branch tag, and does not
 claim a 3 GB reduction unless the measured amd64 difference reaches that value.
+
+## Optional component profiles
+
+The workflow has six independent boolean checkboxes, **all default true**.
+Push/non-dispatch builds always use all-on; false is honored only when explicitly
+selected. Local Docker builds use the matching `A0_INCLUDE_*` build arguments.
+
+| Workflow input | Docker argument | Consequence when false |
+| --- | --- | --- |
+| `include_desktop` | `A0_INCLUDE_DESKTOP` | No Xfce/file manager or live Desktop/Office sessions; shared Browser Xpra/Xvfb remains. |
+| `include_office` | `A0_INCLUDE_OFFICE` | No LibreOffice/UNO editing, conversion or export; pure document parsers/creation libraries remain. |
+| `include_whisper` | `A0_INCLUDE_WHISPER` | External STT only; no local/offline transcription or model download. |
+| `include_kokoro` | `A0_INCLUDE_KOKORO` | External TTS, or browser speech after explicit plugin disable; no local voices/blends. |
+| `include_chromium` | `A0_INCLUDE_CHROMIUM` | No internal automation/viewer or Chromium download; explicitly configure Host browser integration. |
+| `include_searxng` | `A0_INCLUDE_SEARXNG` | No bundled search server; set `A0_SEARXNG_URL` to a full external HTTP(S) `/search` endpoint with JSON enabled. |
+
+Office without Desktop retains headless document creation/export, not live Office.
+Desktop without Office retains its viewer/file manager and uses Agent Zero Editor
+for text files; Office launchers/actions are hidden. Local speech libraries are
+selected using normal dependency resolution, not blanket transitive removal.
+Shared Torch, embeddings, document parsing, both Python runtimes, native compilers,
+SSH, supervisor, ffmpeg, fonts and OCR remain in every profile.
+
+The read-only `/etc/a0-image-features.json` lives outside source/user mounts.
+Labels `io.agent-zero.include-*`, `/api/health` and plugin status expose the profile.
+Startup, normal prepare hooks and self-update reconciliation cannot re-enable
+excluded assets. A mounted profile still selecting an unavailable local/internal
+backend gets an explicit error: **provider choices are never switched silently**.
+Configure external STT/TTS in their existing plugin settings using base URL,
+model, optional API key, and TTS voice; see the plugin READMEs for upload/privacy
+semantics. External GPU-provider connectivity is unchanged.
+
+This workflow currently lives on `image-rebuild`, not default `main`. Normal
+GitHub default-branch dispatch UI registration requires a separately approved
+main change. Until then, dispatch the registered workflow explicitly by ref:
+
+```bash
+gh workflow run image-footprint.yml --repo GitLogos/agent-zero --ref image-rebuild \
+  -f include_desktop=false -f include_office=false \
+  -f include_whisper=false -f include_kokoro=false \
+  -f include_chromium=false -f include_searxng=false \
+  -f publish_experimental=true
+```
+
+Profile measurements are real Docker uncompressed bytes, not the sum of component
+estimates; shared dependencies and filesystem allocation overlap. Native gates
+run included features, loopback external speech/search and exclusion checks
+after startup/hooks/dependency reconciliation. Unavailable capabilities are not
+presented as successfully exercised features.
 
 ### Verified speech-enabled candidate
 

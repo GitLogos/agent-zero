@@ -9,6 +9,7 @@
 - `Dockerfile` assembles the runtime candidate.
 - `inventory.py` inventories a container filesystem without starting services; do not name it `profile.py`, which shadows a Python standard-library module when checks run beside it.
 - `smoke.py` exercises real features in a disposable started container.
+- `image_profile.py` owns deterministic component-profile experimental tag suffixes; all-on retains existing tag names.
 - `prepare_cpu_whisper.py` builds the hash-pinned upstream source with isolated `whisper-build-requirements.txt` tooling, then changes dependency metadata only.
 - Bootstrap must use only the standard library; requirement parsing/repackaging runs in that isolated builder, not the pre-install framework environment.
 - `README.md` describes supported features and build/measurement commands.
@@ -24,6 +25,8 @@
 - Preserve Agent Zero Git metadata for versioning, self-update, and rollback.
 - This candidate's approved Triton omission uses `openai-whisper==20250625+a0cpu.1`, preserving every upstream code/asset byte and normal dependency resolution. Triton is optional under `cuda`; no other root speech package is removed, and local CPU speech stays the default.
 - Preserve the CPU wheel/provenance under `/opt/a0-wheels` and installed `a0-cpu-provenance.json`; source hash, recipe hash and code/asset digests make the modification auditable.
+- Six independently approved default-on options may exclude Desktop, LibreOffice/UNO, local Whisper, local Kokoro, Chromium binary and bundled SearXNG. Do not remove any other component or rewrite saved provider choices. Retain shared Xpra/Xvfb, document parsers, runtimes and compiler tools.
+- The persistent manifest, image labels and health/status must agree. Disabled assets/packages must actually be absent and remain absent after ordinary startup, hooks and dependency reconciliation.
 
 ## Work Guidance
 
@@ -40,6 +43,7 @@
 - Record Docker `Size`, registry compressed layer bytes, and merged filesystem usage.
 - Run `pytest tests/test_image_footprint_checks.py` for inventory hardlinks, ELF section accounting, and check-runner module-shadowing regressions.
 - Check wheel RECORD/payload/default markers and `uv pip check`; native gates require Triton absence and unchanged model choices, plus real local synthesis/transcription and loopback-only external API tests.
+- Cover all-on, all-off and meaningful mixed profiles, including Office without Desktop and Desktop without Office. Execute included capabilities and external speech/search, and check excluded APIs retain security gates; do not claim unavailable features passed.
 
 ## Child DOX Index
 

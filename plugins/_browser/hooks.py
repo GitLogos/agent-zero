@@ -9,7 +9,7 @@ import sys
 import threading
 from pathlib import Path
 
-from helpers import files, plugins, yaml as yaml_helper
+from helpers import files, plugins, yaml as yaml_helper, image_features
 from plugins._browser.helpers.config import (
     PLUGIN_NAME,
     browser_runtime_config,
@@ -108,6 +108,11 @@ def cleanup_playwright_cache() -> dict:
 
 
 def prepare_playwright_cache() -> dict:
+    if not image_features.available("chromium"):
+        return {
+            "included": False, "binary": "", "errors": [],
+            "reason": image_features.missing_reason("chromium") + " Select the Host browser backend.",
+        }
     with _SETUP_LOCK:
         _ensure_patchright_dependency()
         result = cleanup_playwright_cache()

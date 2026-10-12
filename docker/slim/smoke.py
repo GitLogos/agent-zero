@@ -11,6 +11,7 @@ import importlib.metadata
 import importlib.util
 import io
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -28,6 +29,9 @@ def run(*args, **kwargs):
 
 
 def runtimes():
+    baseline = "--baseline" in sys.argv
+    if not baseline:
+        from helpers import image_features
     assert callable(cProfile.run), "The check directory must not shadow stdlib profile"
     assert sys.version_info[:2] == (3, 12), sys.version
     output = run(
@@ -37,7 +41,8 @@ def runtimes():
     assert "3.13" in output
     assert run("node", "-e", "console.log(6 * 7)") == "42"
     assert run("npm", "--version")
-    run("/usr/bin/python3", "-c", "import uno; print('UNO available')")
+    if baseline or image_features.available("office"):
+        run("/usr/bin/python3", "-c", "import uno; print('UNO available')")
     with tempfile.TemporaryDirectory() as directory:
         source = Path(directory, "hello.c")
         source.write_text('#include <stdio.h>\nint main(void) { puts("native-code-ok"); return 0; }\n')
@@ -45,22 +50,27 @@ def runtimes():
         run("gcc", str(source), "-o", str(binary))
         assert run(str(binary)) == "native-code-ok"
     assert run("llvm-config", "--version")
-    if "--baseline" not in sys.argv:
+    if not baseline:
         from packaging.requirements import Requirement
-        import whisper
-
-        run("uv", "pip", "install", "--python", sys.executable, "-r", "/a0/requirements.txt")
-        distribution = importlib.metadata.distribution("openai-whisper")
-        assert distribution.version == "20250625+a0cpu.1"
+        run(
+            sys.executable, "/ins/select_image_requirements.py",
+            "/a0/requirements.txt", "/tmp/image-smoke-requirements.txt",
+        )
+        run("uv", "pip", "install", "--python", sys.executable, "-r", "/tmp/image-smoke-requirements.txt")
         assert importlib.util.find_spec("triton") is None
-        for raw in distribution.requires:
-            requirement = Requirement(raw)
-            if requirement.name.lower() == "triton":
-                assert requirement.marker and not requirement.marker.evaluate({"extra": ""})
-        provenance = json.loads(distribution.read_text("a0-cpu-provenance.json"))
-        for name, digest in provenance["payload_sha256"].items():
-            assert hashlib.sha256(distribution.locate_file(name).read_bytes()).hexdigest() == digest
-        assert {"tiny", "base", "small", "medium", "large", "turbo"} <= set(whisper.available_models())
+        if image_features.available("whisper"):
+            import whisper
+
+            distribution = importlib.metadata.distribution("openai-whisper")
+            assert distribution.version == "20250625+a0cpu.1"
+            for raw in distribution.requires:
+                requirement = Requirement(raw)
+                if requirement.name.lower() == "triton":
+                    assert requirement.marker and not requirement.marker.evaluate({"extra": ""})
+            provenance = json.loads(distribution.read_text("a0-cpu-provenance.json"))
+            for name, digest in provenance["payload_sha256"].items():
+                assert hashlib.sha256(distribution.locate_file(name).read_bytes()).hexdigest() == digest
+            assert {"tiny", "base", "small", "medium", "large", "turbo"} <= set(whisper.available_models())
         run("uv", "pip", "check", "--python", sys.executable)
     print("Python 3.12 framework, Python 3.13 tasks, UNO, Node/npm and native compilation work.")
 
@@ -195,11 +205,13 @@ def ffmpeg():
 
 
 def plugin_hooks():
+    from helpers import image_features
     from plugins._browser import hooks as browser
     from plugins._desktop import hooks as desktop
     from plugins._office import hooks as office
 
-    assert browser.prepare_playwright_cache()["binary"]
+    preparation = browser.prepare_playwright_cache()
+    assert bool(preparation["binary"]) == image_features.available("chromium"), preparation
     for hook in (office, desktop):
         result = hook.cleanup_stale_runtime_state()
         assert result["ok"], result
@@ -261,36 +273,192 @@ def live_office():
     print("Xfce/Xpra Desktop opens a real LibreOffice Writer document window.")
 
 
+def desktop():
+    from plugins._desktop.helpers.desktop_session import DesktopSessionManager
+
+    manager = DesktopSessionManager()
+    try:
+        state = manager.ensure_system_desktop()
+        assert state["available"], state
+        with urllib.request.urlopen("http://127.0.0.1:80" + state["url"], timeout=20) as response:
+            assert response.status == 200
+        assert "Terminal.desktop" in {
+            path.name for path in (manager._sessions["agent-zero-desktop"].profile_dir / "Desktop").iterdir()
+        }
+    finally:
+        manager.shutdown()
+    print("Xfce Desktop starts independently of Office.")
+
+
+def image_capabilities():
+    from helpers import image_features, plugins
+    from plugins._browser.helpers import playwright
+    from plugins._desktop import hooks as desktop_hooks
+    from plugins._office import hooks as office_hooks
+
+    features = image_features.get_features()
+    enabled = plugins.get_enabled_plugins(None)
+    client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    with client.open("http://127.0.0.1/api/health", timeout=30) as response:
+        assert json.load(response)["image_features"] == features
+    with client.open(urllib.request.Request(
+        "http://127.0.0.1/api/csrf_token", headers={"Origin": "http://127.0.0.1"}
+    ), timeout=30) as response:
+        token = json.load(response)["token"]
+    for feature in ("desktop", "office"):
+        if not features[feature]:
+            assert "_" + feature not in enabled
+            assert plugins.get_toggle_state("_" + feature) == "disabled"
+            try:
+                plugins.toggle_plugin("_" + feature, True)
+            except ValueError as exc:
+                assert "not included" in str(exc)
+            else:
+                raise AssertionError("Excluded plugin was enabled")
+            route = "desktop_session" if feature == "desktop" else "office_session"
+            url = f"http://127.0.0.1/api/plugins/_{feature}/{route}"
+            unsigned = urllib.request.Request(url, data=b"{}", headers={"Content-Type": "application/json"})
+            try:
+                client.open(unsigned, timeout=30)
+            except urllib.error.HTTPError as exc:
+                assert exc.code == 403, exc.code
+            else:
+                raise AssertionError("Excluded plugin bypassed CSRF")
+            for _ in range(2):
+                signed = urllib.request.Request(url, data=b'{"action":"status"}', headers={
+                    "Content-Type": "application/json", "Origin": "http://127.0.0.1",
+                    "X-CSRF-Token": token,
+                })
+                try:
+                    client.open(signed, timeout=30)
+                except urllib.error.HTTPError as exc:
+                    assert exc.code == 409 and "not included" in json.load(exc)["error"]
+                else:
+                    raise AssertionError("Excluded plugin API became available")
+    if not features["desktop"]:
+        assert not shutil.which("xfce4-session")
+        assert desktop_hooks.cleanup_stale_runtime_state(force=True)["skipped"]
+    if not features["office"]:
+        assert not shutil.which("soffice")
+        assert office_hooks.cleanup_stale_runtime_state(force=True)["skipped"]
+    if not features["chromium"]:
+        assert playwright.get_playwright_binary() is None
+        assert not list(Path("/a0/tmp/playwright").glob("chromium-*"))
+        try:
+            playwright.ensure_playwright_binary()
+        except RuntimeError as exc:
+            assert "not included" in str(exc)
+        else:
+            raise AssertionError("Excluded Chromium was downloaded")
+    for feature, module in (("whisper", "whisper"), ("kokoro", "kokoro")):
+        if not features[feature]:
+            assert importlib.util.find_spec(module) is None
+    if not features["searxng"]:
+        assert not Path("/usr/local/searxng").exists()
+        assert "run_searxng" not in run("supervisorctl", "status")
+    print("Image capabilities and excluded assets remain absent after normal startup/hooks/requirements reconciliation:", features)
+
+
 def search_and_services():
+    from helpers import image_features, searxng
     import yaml
 
-    settings = yaml.safe_load(Path("/etc/searxng/settings.yml").read_text())
-    port = settings["server"]["port"]
-    with urllib.request.urlopen(
-        f"http://127.0.0.1:{port}/search?q=LibreOffice&format=json", timeout=90
-    ) as response:
-        result = json.load(response)
-    assert result["query"] == "LibreOffice", result
-    assert result["results"], f"SearXNG returned no real search results: {result}"
+    if image_features.available("searxng"):
+        settings = yaml.safe_load(Path("/etc/searxng/settings.yml").read_text())
+        port = settings["server"]["port"]
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/search?q=LibreOffice&format=json", timeout=90
+        ) as response:
+            result = json.load(response)
+        assert result["query"] == "LibreOffice", result
+        assert result["results"], f"SearXNG returned no real search results: {result}"
+    else:
+        try:
+            searxng.search_url()
+        except RuntimeError as exc:
+            assert "A0_SEARXNG_URL" in str(exc)
+        else:
+            raise AssertionError("Missing external search configuration was not reported")
     statuses = run("supervisorctl", "status")
-    for service in ("run_ui", "run_sshd", "run_searxng", "run_cron"):
+    services = ["run_ui", "run_sshd", "run_cron"]
+    if image_features.available("searxng"):
+        services.append("run_searxng")
+    for service in services:
         assert any(line.startswith(service + " ") and "RUNNING" in line for line in statuses.splitlines()), statuses
     run("/usr/sbin/sshd", "-t")
-    print("SearXNG returns search results; supervised WebUI, SSH, search and cron are running.")
+    print("Included search is functional or omitted search requires explicit configuration; retained supervised services run.")
+
+
+def external_search():
+    from helpers import searxng
+    from urllib.parse import parse_qs
+
+    calls = []
+    class Provider(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            assert self.path == "/search"
+            body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+            assert parse_qs(body) == {"q": ["profile fixture"], "format": ["json"]}
+            calls.append(body)
+            payload = b'{"query":"profile fixture","results":[{"title":"Fixture","url":"https://example.test/"}]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    worker = threading.Thread(target=server.serve_forever)
+    worker.start()
+    previous = os.environ.get("A0_SEARXNG_URL")
+    try:
+        os.environ["A0_SEARXNG_URL"] = f"http://127.0.0.1:{server.server_port}/search"
+        result = asyncio.run(searxng._search("profile fixture"))
+        assert result["results"][0]["title"] == "Fixture" and len(calls) == 1
+    finally:
+        if previous is None:
+            del os.environ["A0_SEARXNG_URL"]
+        else:
+            os.environ["A0_SEARXNG_URL"] = previous
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+    print("External SearXNG-compatible search uses an explicit loopback fixture endpoint.")
 
 
 async def speech():
+    from helpers import image_features
     from plugins._kokoro_tts.helpers import runtime as tts
     from plugins._whisper_stt.helpers import runtime as stt
 
-    audio = await tts.synthesize_sentences(
-        ["The image smoke test is successful."], {"voice": "af_heart", "speed": 1.0}
-    )
-    assert base64.b64decode(audio).startswith(b"RIFF")
-    result = await stt.transcribe(audio, {"model_size": "base", "language": "en"})
-    text = result.get("text", "").strip().lower()
-    assert "test" in text or "image" in text, result
-    print("Kokoro synthesizes speech and Whisper base transcribes the generated audio.")
+    features = image_features.get_features()
+    audio = None
+    if features["kokoro"]:
+        audio = await tts.synthesize_sentences(
+            ["The image smoke test is successful."], {"voice": "af_heart", "speed": 1.0}
+        )
+        assert base64.b64decode(audio).startswith(b"RIFF")
+    if features["whisper"]:
+        if audio is None:
+            buffer = io.BytesIO()
+            with wave.open(buffer, "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(16000)
+                wav.writeframes(b"\x00\x00" * 16000)
+            audio = base64.b64encode(buffer.getvalue()).decode()
+        result = await stt.transcribe(audio, {"model_size": "base", "language": "en"})
+        assert isinstance(result.get("text"), str), result
+        if features["kokoro"]:
+            text = result["text"].strip().lower()
+            assert "test" in text or "image" in text, result
+    for feature, runtime in (("whisper", stt), ("kokoro", tts)):
+        if not features[feature]:
+            assert "not included" in runtime.configuration_error(runtime.normalize_config({"backend": "local"}))
+    print("Included local speech engines execute; excluded local backends report explicit configuration errors.")
 
 
 def external_speech_api():
@@ -418,20 +586,30 @@ def main():
             "ffmpeg": ffmpeg,
         }
     else:
+        from helpers import image_features
+
+        features = image_features.get_features()
         cases = {
             "runtimes": runtimes,
             "offline_memory": offline_memory,
-            "office_exports": office_exports,
             "document_parsing": document_parsing,
             "ocr": ocr,
             "ffmpeg": ffmpeg,
             "plugin_hooks": plugin_hooks,
-            "browser_headless_and_interactive": lambda: asyncio.run(browser()),
-            "live_office": live_office,
             "search_and_services": search_and_services,
             "speech_synthesis_and_transcription": lambda: asyncio.run(speech()),
             "external_speech_api": external_speech_api,
+            "external_search": external_search,
         }
+        if features["office"]:
+            cases["office_exports"] = office_exports
+        if features["chromium"]:
+            cases["browser_headless_and_interactive"] = lambda: asyncio.run(browser())
+        if features["desktop"]:
+            cases["desktop"] = desktop
+        if features["office"] and features["desktop"]:
+            cases["live_office"] = live_office
+        cases["image_capabilities"] = image_capabilities
     results = {}
     for name, check in cases.items():
         print(f"\n=== {name} ===", flush=True)

@@ -20,10 +20,14 @@
           </div>
           <div class="field-control">
             <select x-model="config.backend">
-              <option value="local">Local Whisper (CPU)</option>
+              <option value="local" :disabled="$store.whisperStt?.localAvailable === false">Local Whisper (CPU)</option>
               <option value="openai">External OpenAI-compatible API</option>
             </select>
           </div>
+        </div>
+
+        <div class="section-description" x-show="$store.whisperStt?.localAvailable === false">
+          Local Whisper was excluded at image build time. Select and configure the external backend; recordings are not sent anywhere until you explicitly configure it.
         </div>
 
         <div x-show="config.backend === 'openai'">

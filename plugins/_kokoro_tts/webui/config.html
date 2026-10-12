@@ -130,10 +130,14 @@
           </div>
           <div class="field-control">
             <select x-model="config.backend">
-              <option value="local">Local Kokoro (CPU)</option>
+              <option value="local" :disabled="$store.kokoroTts?.localAvailable === false">Local Kokoro (CPU)</option>
               <option value="openai">External OpenAI-compatible API</option>
             </select>
           </div>
+        </div>
+
+        <div class="section-description" x-show="$store.kokoroTts?.localAvailable === false">
+          Local Kokoro was excluded at image build time. Configure the external backend, or explicitly disable this plugin to use browser-native speech.
         </div>
 
         <div x-show="config.backend === 'openai'">

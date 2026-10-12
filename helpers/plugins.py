@@ -28,6 +28,7 @@ from helpers import (
     watchdog,
     modules,
     functions,
+    image_features,
 )
 from pydantic import BaseModel, Field
 
@@ -104,6 +105,7 @@ class PluginListItem(BaseModel):
     current_commit: str = ""
     current_commit_timestamp: str = ""
     thumbnail_url: str = ""
+    unavailable_reason: str = ""
 
 
 class PluginUpdateInfo(BaseModel):
@@ -328,6 +330,7 @@ def get_enhanced_plugins_list(
                         current_commit=current_commit,
                         current_commit_timestamp=current_commit_timestamp,
                         thumbnail_url=thumbnail_url,
+                        unavailable_reason=image_features.unavailable_reason(d.name),
                     )
                 )
             except Exception as e:
@@ -489,6 +492,8 @@ def get_enabled_plugins(agent: Agent | None):
     active = []
 
     for plugin in plugins:
+        if image_features.unavailable_reason(plugin):
+            continue
         meta = get_plugin_meta(plugin)
         if meta and meta.always_enabled:
             active.append(plugin)
@@ -541,6 +546,8 @@ def determined_toggle_from_paths(default: bool, paths: Iterator[str]):
 
 
 def get_toggle_state(plugin_name: str) -> ToggleState:
+    if image_features.unavailable_reason(plugin_name):
+        return "disabled"
     meta = get_plugin_meta(plugin_name)
     if not meta:
         return "disabled"
@@ -565,6 +572,8 @@ def toggle_plugin(
     agent_profile: str = "",
     clear_overrides: bool = False,
 ):
+    if enabled and (reason := image_features.unavailable_reason(plugin_name)):
+        raise ValueError(reason)
     meta = get_plugin_meta(plugin_name)
     if meta and meta.always_enabled and not enabled:
         raise ValueError(f'Plugin "{plugin_name}" is always enabled.')

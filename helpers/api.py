@@ -19,7 +19,7 @@ from flask import (
 from werkzeug.wrappers.response import Response as BaseResponse
 from helpers.print_style import PrintStyle
 from helpers.errors import format_error
-from helpers import files, cache
+from helpers import files, cache, image_features
 
 ThreadLockType = Union[threading.Lock, threading.RLock]
 
@@ -257,6 +257,13 @@ def register_api_route(app: Flask, lock: ThreadLockType) -> None:
 
         # Build handler call, wrapping with security decorators as required
         async def call_handler() -> BaseResponse:
+            parts = path.split("/", 2)
+            if len(parts) == 3 and parts[0] == "plugins":
+                reason = image_features.unavailable_reason(parts[1])
+                if reason:
+                    response = jsonify({"error": reason})
+                    response.status_code = 409
+                    return response
             instance = handler_cls(app, lock)
             return await instance.handle_request(request=request)
 

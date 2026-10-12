@@ -26,6 +26,7 @@
 - `HealthCheck` defines `get_methods(...)`.
 - `HealthCheck` defines `requires_auth(...)`.
 - `HealthCheck` defines `requires_csrf(...)`.
+- Existing probe fields are preserved; `image_features` reports six public build-capability booleans from the persistent manifest. Invalid manifests fail explicitly.
 - Imported dependency areas include: `helpers`, `helpers.api`.
 
 ## Key Concepts

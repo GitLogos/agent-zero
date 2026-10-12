@@ -9,16 +9,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from helpers import files, state_migration, system_packages
+from helpers import files, state_migration, system_packages, image_features
+from plugins._office.hooks import LIBREOFFICE_RUNTIME_PACKAGES
 
-LIBREOFFICE_RUNTIME_PACKAGES = (
-    "libreoffice-core",
-    "libreoffice-writer",
-    "libreoffice-calc",
-    "libreoffice-impress",
-    "libreoffice-gtk3",
-    "python3-uno",
-)
 XPRA_SOURCE_FILE = Path("/etc/apt/sources.list.d/xpra.sources")
 XPRA_KEYRING_FILE = Path("/usr/share/keyrings/xpra.asc")
 XPRA_KEY_URL = "https://xpra.org/xpra.asc"
@@ -96,6 +89,12 @@ _preparation_state: dict[str, Any] = {
 def cleanup_stale_runtime_state(force: bool = False) -> dict[str, Any]:
     """Prepare the Linux Desktop runtime and reap stale Desktop sessions."""
 
+    if not image_features.available("desktop"):
+        return {
+            "ok": True, "skipped": True, "removed": [], "installed": [],
+            "migrated": [], "warnings": [], "errors": [],
+            "reason": image_features.unavailable_reason(PLUGIN_NAME),
+        }
     _begin_runtime_preparation()
     result: dict[str, Any] | None = None
     error = ""
@@ -250,9 +249,15 @@ def _purge_packages(
 
 
 def _ensure_runtime_dependencies(installed: list[str], errors: list[str]) -> None:
+    if not image_features.available("desktop"):
+        return
     if os.geteuid() != 0 or not shutil.which("apt-get") or not shutil.which("dpkg-query"):
         return
-    missing = [package for package in RUNTIME_PACKAGES if not _package_installed(package)]
+    packages = tuple(
+        package for package in RUNTIME_PACKAGES
+        if image_features.available("office") or package not in LIBREOFFICE_RUNTIME_PACKAGES
+    )
+    missing = [package for package in packages if not _package_installed(package)]
     if not missing:
         return
 
@@ -268,7 +273,7 @@ def _ensure_runtime_dependencies(installed: list[str], errors: list[str]) -> Non
         _ensure_xpra_repository(installed, errors)
         if len(errors) > previous_error_count or not _apt_update(errors):
             return
-        missing = [package for package in RUNTIME_PACKAGES if not _package_installed(package)]
+        missing = [package for package in packages if not _package_installed(package)]
         if not missing:
             return
 

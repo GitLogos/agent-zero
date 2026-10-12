@@ -1,4 +1,5 @@
 from helpers.api import ApiHandler, Request
+from helpers import image_features
 from plugins._browser.helpers.config import build_browser_launch_config, get_browser_config
 from plugins._browser.helpers.interactive_view import collect_status as collect_interactive_status
 from plugins._browser.helpers.playwright import (
@@ -23,11 +24,17 @@ class Status(ApiHandler):
             host_browser = {"connectors": all_host_browser_metadata()}
         return {
             "plugin": "_browser",
+            "internal_available": image_features.available("chromium"),
+            "configuration_error": (
+                image_features.missing_reason("chromium") + " Select the Host browser backend."
+                if not image_features.available("chromium") and browser_config["runtime_backend"] == "container"
+                else ""
+            ),
             "playwright": {
                 "cache_dir": get_playwright_cache_dir(),
                 "cache_dirs": [str(path) for path in get_playwright_cache_dirs()],
                 "binary_found": bool(runtime_binary),
-                "install_required": not bool(runtime_binary),
+                "install_required": image_features.available("chromium") and not bool(runtime_binary),
                 "binary_path": str(runtime_binary) if runtime_binary else "",
                 "chromium_binary_path": str(chromium_binary) if chromium_binary else "",
                 "launch_mode": launch_config["browser_mode"],

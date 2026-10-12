@@ -9,6 +9,9 @@ Speech synthesis plugin with local CPU Kokoro (default) and an explicit external
 - Keeps browser-native `speechSynthesis` as the fallback path when disabled.
 - Keeps Python dependencies on the core Docker/bootstrap path. This plugin does not install packages or binaries on demand.
 - Uses Kokoro's existing voice-pack cache and does not create persistent blend files.
+- With `A0_INCLUDE_KOKORO=false`, local voices/blends are unavailable. Configure
+  external TTS explicitly, or disable this plugin deliberately to use browser speech.
+  A selected but excluded local engine reports an error, not an automatic fallback.
 
 ## Config
 

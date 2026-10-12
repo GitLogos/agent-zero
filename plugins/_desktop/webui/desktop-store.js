@@ -260,6 +260,7 @@ const model = {
   _desktopKeepaliveHost: null,
   _desktopDisplaySizes: {},
   _desktopIntentionalShutdown: false,
+  officeAvailable: true,
 
   async init(element = null) {
     this.restoreDesktopShutdownState();
@@ -333,6 +334,7 @@ const model = {
     try {
       const status = await callDesktop("status");
       this.status = status || {};
+      this.officeAvailable = status?.office_available !== false;
       this.error = "";
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -467,6 +469,7 @@ const model = {
           this.error = "";
         }
         const response = await this.openDesktopWhenRuntimeReady(showProgress);
+        this.officeAvailable = response?.office_available !== false;
         if (response?.ok === false) throw new Error(response.error || "Desktop session could not be opened.");
         this.setDesktopIntentionalShutdown(false);
         const session = normalizeSession(response);

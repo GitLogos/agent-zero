@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 from helpers.api import ApiHandler, Request, Response
-from helpers import plugins, files, extension
+from helpers import plugins, files, extension, image_features
 from helpers.localization import Localization
 
 
@@ -101,6 +101,13 @@ class Plugins(ApiHandler):
         meta = plugins.get_plugin_meta(plugin_name)
         if not meta:
             return Response(status=404, response="Plugin not found")
+
+        reason = image_features.unavailable_reason(plugin_name)
+        if reason:
+            return {
+                "ok": True, "status": "disabled", "unavailable_reason": reason,
+                "loaded_project_name": "", "loaded_agent_profile": "", "loaded_path": "",
+            }
 
         if meta.always_enabled:
             return {

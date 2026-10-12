@@ -6,7 +6,7 @@ import sys
 from importlib import resources
 from pathlib import Path
 
-from helpers import files
+from helpers import files, image_features
 
 FULL_CHROMIUM_PATTERNS = (
     "chromium-*/chrome-linux*/chrome",
@@ -73,6 +73,8 @@ def _chromium_revision(binary: Path) -> int:
 
 
 def get_playwright_binary() -> Path | None:
+    if not image_features.available("chromium"):
+        return None
     cache_dir = _primary_cache_dir()
     binary = find_playwright_binary(_primary_cache_dir())
     revision = get_playwright_chromium_revision()
@@ -96,6 +98,7 @@ def get_playwright_chromium_revision() -> str:
 
 
 def ensure_playwright_binary() -> Path:
+    image_features.require("chromium")
     binary = get_playwright_binary()
     if binary:
         return binary

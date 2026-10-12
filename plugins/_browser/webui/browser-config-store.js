@@ -184,6 +184,7 @@ export const store = createStore("browserConfig", {
   extensionsMessage: "",
   extensionDeleteLoadingPath: "",
   hostBrowserStatus: null,
+  internalAvailable: true,
   hostBrowserStatusLoading: false,
   hostBrowserStatusRefreshTimer: null,
   hostBrowserSetupOpening: "",
@@ -379,6 +380,7 @@ export const store = createStore("browserConfig", {
     this.hostBrowserStatusLoading = true;
     try {
       const response = await callJsonApi(BROWSER_STATUS_API, {});
+      this.internalAvailable = response?.internal_available !== false;
       this.hostBrowserStatus = response?.host_browser || { connectors: [] };
       const safeConfig = ensureConfig(this.config);
       if (safeConfig) {

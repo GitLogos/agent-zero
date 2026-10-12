@@ -7,9 +7,7 @@ import tempfile
 import warnings
 from typing import Any
 
-import whisper
-
-from helpers import files, plugins
+from helpers import files, plugins, image_features
 from helpers import external_speech
 from helpers.notification import (
     NotificationManager,
@@ -96,6 +94,13 @@ def get_config() -> dict[str, Any]:
     return normalize_config(config)
 
 
+def configuration_error(config: dict[str, Any]) -> str:
+    error = external_speech.configuration_error(config)
+    if not error and config["backend"] == "local" and not image_features.available("whisper"):
+        return "Local Whisper is not included in this image. Configure an external OpenAI-compatible STT backend."
+    return error
+
+
 def get_loaded_model_name() -> str:
     config = get_config()
     if external_speech.is_external(config):
@@ -119,6 +124,9 @@ async def preload(model_name: str | None = None):
 
 
 async def _preload(model_name: str):
+    image_features.require("whisper")
+    import whisper
+
     global _model, _model_name, is_updating_model
 
     while is_updating_model:
@@ -161,7 +169,7 @@ async def is_downloaded() -> bool:
     cfg = get_config()
     if external_speech.is_external(cfg):
         return not external_speech.configuration_error(cfg)
-    return _model is not None
+    return image_features.available("whisper") and _model is not None
 
 
 async def transcribe(

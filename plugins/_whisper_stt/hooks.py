@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from helpers.defer import DeferredTask
+from helpers import image_features
 from plugins._whisper_stt.helpers import migration, runtime
 
 
@@ -17,7 +18,7 @@ def save_plugin_config(default=None, settings=None, **kwargs):
 
     previous_model = str(previous.get("model_size") or "")
     next_model = str(normalized.get("model_size") or "")
-    if normalized["backend"] == "local" and next_model and (
+    if image_features.available("whisper") and normalized["backend"] == "local" and next_model and (
         next_model != previous_model or previous["backend"] != "local"
     ):
         DeferredTask().start_task(runtime._preload, next_model)

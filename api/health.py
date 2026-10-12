@@ -1,5 +1,5 @@
 from helpers.api import ApiHandler, Request, Response
-from helpers import errors, git
+from helpers import errors, git, image_features
 
 class HealthCheck(ApiHandler):
 
@@ -23,4 +23,4 @@ class HealthCheck(ApiHandler):
         except Exception as e:
             error = errors.error_text(e)
 
-        return {"gitinfo": gitinfo, "error": error}
+        return {"gitinfo": gitinfo, "error": error, "image_features": image_features.get_features()}

@@ -19,6 +19,7 @@ const model = {
     // Status: 'enabled' | 'disabled'
     status: 'enabled',
     alwaysEnabled: false,
+    unavailableReason: "",
     perProjectConfig: true,
     perAgentConfig: true,
     hasExplicitRuleForScope: false,
@@ -48,6 +49,7 @@ const model = {
         const pluginName = typeof plugin === 'string' ? plugin : plugin?.name;
         this.pluginName = pluginName;
         this.alwaysEnabled = typeof plugin === 'object' ? !!plugin.always_enabled : false;
+        this.unavailableReason = typeof plugin === 'object' ? plugin.unavailable_reason || "" : "";
         this.perProjectConfig = typeof plugin === 'object' ? !!plugin.per_project_config : true;
         this.perAgentConfig = typeof plugin === 'object' ? !!plugin.per_agent_config : true;
         this.hasConfigScreen = typeof plugin === 'object' ? !!plugin.has_config_screen : false;
@@ -69,6 +71,7 @@ const model = {
         this.perProjectConfig = true;
         this.perAgentConfig = true;
         this.alwaysEnabled = false;
+        this.unavailableReason = "";
         this.hasConfigScreen = false;
         this.hasExplicitRuleForScope = false;
         this.loadedPath = "";
@@ -132,7 +135,7 @@ const model = {
     async loadToggleStatus() {
         if (!this.pluginName) return;
 
-        if (this.alwaysEnabled) {
+        if (this.alwaysEnabled && !this.unavailableReason) {
             this.status = 'enabled';
             this.hasExplicitRuleForScope = true;
             this.loadedPath = "";
@@ -154,6 +157,7 @@ const model = {
             });
             const result = await response.json().catch(() => ({}));
             if (result.ok) {
+                this.unavailableReason = result.unavailable_reason || "";
                 this.status = result.status || 'enabled';
                 this.loadedPath = result.loaded_path || "";
                 this.loadedProjectName = result.loaded_project_name || "";
@@ -200,7 +204,7 @@ const model = {
     },
 
     async setEnabled(enabled, { projectName = this.projectName, agentProfileKey = this.agentProfileKey } = {}) {
-        if (!this.pluginName || this.alwaysEnabled) return;
+        if (!this.pluginName || this.alwaysEnabled || this.unavailableReason) return;
         const previousStatus = this.status;
         const previousProjectName = this.projectName;
         const previousAgentProfileKey = this.agentProfileKey;
@@ -261,6 +265,7 @@ const model = {
     },
 
     get statusLabel() {
+        if (this.unavailableReason) return "Not included in image";
         return this.status === 'enabled' ? 'ON' : 'OFF';
     },
 

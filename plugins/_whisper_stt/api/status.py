@@ -1,7 +1,7 @@
 import importlib.metadata
 
 from helpers.api import ApiHandler, Request, Response
-from helpers import external_speech
+from helpers import external_speech, image_features
 from plugins._whisper_stt.helpers import migration, runtime
 
 
@@ -13,16 +13,17 @@ class Status(ApiHandler):
         package_error = ""
         try:
             package_version = importlib.metadata.version("openai-whisper")
-        except Exception as e:
+        except importlib.metadata.PackageNotFoundError as e:
             package_error = str(e)
 
         config = runtime.get_config()
-        error = external_speech.configuration_error(config)
+        error = runtime.configuration_error(config)
         return {
             "plugin": "_whisper_stt",
             "enabled": runtime.is_globally_enabled(),
             "config": external_speech.public_config(config),
             "configuration_error": error,
+            "local_available": image_features.available("whisper"),
             "model": {
                 "ready": False if error else await runtime.is_downloaded(),
                 "loading": False if error else await runtime.is_downloading(),

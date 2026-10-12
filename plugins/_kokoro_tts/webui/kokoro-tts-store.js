@@ -20,6 +20,7 @@ const model = {
     speed: 1.1,
   },
   modelReady: false,
+  localAvailable: true,
   modelLoading: false,
   packageVersion: "",
   providerCleanup: null,
@@ -52,6 +53,7 @@ const model = {
         speed: Number(status?.config?.speed || 1.1),
       };
       this.modelReady = !!status?.model?.ready;
+      this.localAvailable = status?.local_available !== false;
       this.modelLoading = !!status?.model?.loading;
       this.packageVersion = status?.package?.version || "";
       this.error = status?.configuration_error || "";
@@ -76,14 +78,14 @@ const model = {
     if (this.providerCleanup || !this.enabled) return;
 
     this.providerCleanup = ttsService.registerProvider(PLUGIN_NAME, {
-      allowBrowserFallback: () => this.config.backend === "local",
+      allowBrowserFallback: () => this.config.backend === "local" && this.localAvailable,
       synthesize: async (text, { signal } = {}) => {
         const result = await callJsonApi(`/plugins/${PLUGIN_NAME}/synthesize`, {
           text,
         }, { signal });
         if (!result?.success) {
           const error = new Error(result?.error || "Kokoro TTS synthesis failed.");
-          error.allowBrowserFallback = result?.backend === "local";
+          error.allowBrowserFallback = result?.allow_browser_fallback ?? (result?.backend === "local" && this.localAvailable);
           throw error;
         }
 

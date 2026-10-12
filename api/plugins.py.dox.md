@@ -22,6 +22,7 @@
 - `Plugins` defines `process(...)`.
 - Toggle requests that try to disable an `always_enabled` plugin return HTTP
   400 without changing plugin state.
+- Build-excluded Desktop/Office report disabled with `unavailable_reason` even when scoped activation is saved; enable requests return HTTP 400 without changing state.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, subprocess/runtime control, plugin state, settings/state persistence.
 - Imported dependency areas include: `helpers`, `helpers.api`, `helpers.localization`, `json`, `os`, `subprocess`, `sys`.
 

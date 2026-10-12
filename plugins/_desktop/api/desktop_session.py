@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from helpers.api import ApiHandler, Request
+from helpers import image_features
 from plugins._desktop.helpers import desktop_session
 from plugins._office.helpers import document_store
 from plugins._office.helpers import libreoffice
@@ -59,6 +60,7 @@ class DesktopSession(ApiHandler):
             "desktop": desktop,
             "store_session_id": "",
             "mode": "desktop",
+            "office_available": image_features.available("office"),
         }
 
     def _open_document(self, input: dict, request: Request) -> dict:

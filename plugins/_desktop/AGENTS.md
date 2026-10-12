@@ -22,7 +22,8 @@
 - Rename open LibreOffice documents through native Save As so unsaved edits and subsequent WebUI/native saves follow the new path. `helpers/rename_office_document.py` runs with system Python/UNO, connects to the existing profile through a local named pipe, and matches the full document URL; never select a document by basename alone. Retain the document's format/filter and encryption properties, and disallow target overwrite. Closed documents retain filesystem rename behavior.
 - Do not expose desktop routes without the expected auth protections.
 - Keep Desktop host visibility tied to an attached modal or canvas host; modal cleanup may preserve the iframe in keepalive, but must not leave stale modal mode behind.
-- Keep LibreOffice Writer as the default handler for Markdown and plain text files; keep Agent Zero Editor available as a secondary Open With target through the desktop intent bridge.
+- Keep LibreOffice Writer as the default handler for Markdown/plain text when Office is included; Office-free Desktop uses Agent Zero Editor through the intent bridge and hides Office launchers/New actions.
+- Build-excluded Desktop skips preparation/repair and rejects direct launch. Desktop with Office excluded must neither require nor auto-install LibreOffice; shared Office package names come from Office hooks. Office without Desktop retains headless exports, not live Desktop sessions.
 - Style the shutdown-state restart action with shared `btn btn-field`, matching Open Browser.
 - Use shared `surface-workspace` and `--surface-background` for panel, body, and viewer backdrops so shutdown/loading states match the lighter Files, Editor, and Browser palette.
 

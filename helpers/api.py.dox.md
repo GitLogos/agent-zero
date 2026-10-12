@@ -46,6 +46,7 @@
 
 - Important called helpers/classes observed in the source: `wraps`, `app.add_url_rule`, `watchdog.add_watchdog`, `cls.requires_auth`, `_use_context`, `login.get_credentials_hash`, `files.get_abs_path`, `handler_cls.requires_csrf`, `handler_cls.requires_api_key`, `handler_cls.requires_auth`, `handler_cls.requires_loopback`, `cache.add`, `PrintStyle.debug`, `cache.clear`, `get_settings`, `f`, `is_loopback_address`, `Response`, `redirect`, `files.is_in_dir`.
 - HTTP handlers retain built-in `api/` and explicit plugin API precedence, then fall back to standalone `usr/api/`; built-in and user roots are containment-checked, and every loaded handler keeps its declared authentication, CSRF, API-key, loopback, and method gates.
+- Cached and first-time Desktop/Office API dispatch returns HTTP 409 with an explicit build-exclusion reason only after the handler's declared security gates; exclusion never weakens authentication/CSRF.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance

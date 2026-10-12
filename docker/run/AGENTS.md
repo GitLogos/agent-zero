@@ -19,6 +19,8 @@
 - `BRANCH` is required for branch-based Docker builds.
 - `install_A0.sh` accepts an optional full `A0_BUILD_COMMIT` SHA for reproducible builds and checks it out on the selected named branch, retaining Git history and self-update compatibility.
 - `install_A0.sh` optionally accepts `A0_WHISPER_WHEEL`; the existing wheel must resolve normally alongside all root requirements. Standard builds omit it and retain upstream package installation.
+- Profile builds create `/etc/a0-image-features.json` before installation/preload. `select_image_requirements.py` omits only disabled local speech roots, preserving normal resolution of shared dependencies; package/browser scripts honor six default-true `A0_INCLUDE_*` flags.
+- `configure_image_features.py` removes excluded inherited SearXNG before root export and reapplies its supervisor exclusion after startup restores `/per`; source updates and mounted user settings do not overwrite the manifest.
 - Preserve exposed ports for SSH, HTTP, and tunneled services unless docs and workflows are updated together.
 - Keep the two-runtime Python model aligned with the root contract.
 - For v2.13 builds, retain the Python 3.13-compatible ATK, LibreOffice/UNO, and Xpra pins in `fs/ins/install_additional.sh`. Resolve them from the signed Debian `forky` archive dated `20260624T000000Z` and Xpra `trixie`, using build-scoped APT options that preserve normal Kali sources.

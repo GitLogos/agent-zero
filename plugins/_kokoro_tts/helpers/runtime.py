@@ -10,7 +10,7 @@ from typing import Any
 
 import soundfile as sf
 
-from helpers import plugins
+from helpers import plugins, image_features
 from helpers import external_speech
 from helpers.notification import (
     NotificationManager,
@@ -90,6 +90,13 @@ def get_config() -> dict[str, Any]:
     return normalize_config(config)
 
 
+def configuration_error(config: dict[str, Any]) -> str:
+    error = external_speech.configuration_error(config, tts=True)
+    if not error and config["backend"] == "local" and not image_features.available("kokoro"):
+        return "Local Kokoro is not included in this image. Configure an external OpenAI-compatible TTS backend or explicitly disable the plugin for browser speech."
+    return error
+
+
 def is_globally_enabled() -> bool:
     migration.ensure_migrated()
     return plugins.determined_toggle_from_paths(
@@ -106,6 +113,7 @@ async def preload(config: dict[str, Any] | None = None):
 
 
 async def _preload():
+    image_features.require("kokoro")
     global _pipeline, is_updating_model
 
     while is_updating_model:
@@ -146,7 +154,7 @@ async def is_downloaded() -> bool:
     cfg = get_config()
     if external_speech.is_external(cfg):
         return not external_speech.configuration_error(cfg, tts=True)
-    return _pipeline is not None
+    return image_features.available("kokoro") and _pipeline is not None
 
 
 async def synthesize_sentences(

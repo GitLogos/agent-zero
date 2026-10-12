@@ -46,10 +46,10 @@
                         <div class="plugin-settings-scope-header-toggle"
                              x-show="$store.pluginToggle && !$store.pluginToggle.alwaysEnabled">
                             <span class="plugin-settings-toolbar-label">Enabled</span>
-                            <label class="toggle">
+                            <label class="toggle" :title="$store.pluginToggle?.unavailableReason || ''">
                                 <input type="checkbox"
                                        :checked="$store.pluginToggle?.status === 'enabled'"
-                                       :disabled="$store.pluginToggle?.isSaving || context.isLoading"
+                                       :disabled="$store.pluginToggle?.unavailableReason || $store.pluginToggle?.isSaving || context.isLoading"
                                        @change="context.setPluginEnabled($event.target.checked)">
                                 <span class="toggler"></span>
                             </label>

@@ -28,6 +28,7 @@
 - `webui/config.html` settings UIs must bind plugin values to `config.*` and modal state/actions to `context.*` through `$store.pluginSettingsPrototype`.
 - Plugin model provider overrides belong in plugin `conf/model_providers.yaml` and merge after base `conf/model_providers.yaml`.
 - Global and scoped activation are independent and use `.toggle-1` and `.toggle-0`; `always_enabled: true` forces ON and disables UI toggles.
+- Persistent build exclusions override activation only for omitted Desktop/Office. Local speech and Browser plugins remain available for explicitly configured external/host backends; omitted runtime assets must not auto-install.
 - `hooks.py` runs in the framework runtime. Explicitly target another runtime if a plugin must prepare the agent execution environment.
 - `execute.py` is manual user-triggered setup, maintenance, repair, migration, or refresh work; automatic framework behavior belongs in hooks or lifecycle extensions.
 - Plugin routes are `GET /plugins/<name>/<path>`, `POST /api/plugins/<name>/<handler>`, and `POST /api/plugins` for management actions.

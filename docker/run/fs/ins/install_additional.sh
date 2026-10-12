@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+A0_INCLUDE_DESKTOP="${A0_INCLUDE_DESKTOP:-true}"
+A0_INCLUDE_OFFICE="${A0_INCLUDE_OFFICE:-true}"
+for value in "$A0_INCLUDE_DESKTOP" "$A0_INCLUDE_OFFICE"; do
+  case "$value" in
+    true|false) ;;
+    *) echo "Image feature arguments must be true or false." >&2; exit 1 ;;
+  esac
+done
+
 # install playwright - moved to install A0
 # bash /ins/install_playwright.sh "$@"
 
@@ -43,6 +52,9 @@ LIBREOFFICE_PACKAGES=(
   "libreoffice-gtk3=$LIBREOFFICE_VERSION"
   "python3-uno=$LIBREOFFICE_VERSION"
 )
+if [ "$A0_INCLUDE_OFFICE" = "false" ]; then
+  LIBREOFFICE_PACKAGES=()
+fi
 XPRA_PACKAGES=(
   "xpra-common=$XPRA_VERSION"
   "xpra-server=$XPRA_VERSION"
@@ -51,6 +63,13 @@ XPRA_PACKAGES=(
   "xpra-x11=$XPRA_VERSION"
   "xpra-html5=$XPRA_HTML5_VERSION"
 )
+DESKTOP_PACKAGES=()
+if [ "$A0_INCLUDE_DESKTOP" = "true" ]; then
+  DESKTOP_PACKAGES=(
+    xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-settings
+    thunar gvfs xfce4-terminal
+  )
+fi
 
 # Keep the Python 3.13 desktop stack on a signed, dated archive. Kali's
 # last-snapshot moves between releases and no longer carries these versions.
@@ -77,15 +96,9 @@ DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTIONS[@]}" install -y --no-insta
   gir1.2-gtk-3.0 \
   "${LIBREOFFICE_PACKAGES[@]}" \
   "${XPRA_PACKAGES[@]}" \
-  xfce4-session \
-  xfwm4 \
-  xfce4-panel \
-  xfdesktop4 \
-  xfce4-settings \
-  thunar \
-  gvfs \
+  "${DESKTOP_PACKAGES[@]}" \
+  libgl1 \
   libglib2.0-bin \
-  xfce4-terminal \
   x11-xserver-utils \
   x11-utils \
   x11-apps \

@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from helpers import files, state_migration, system_packages
+from helpers import files, state_migration, system_packages, image_features
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -51,13 +51,16 @@ RETIRED_WEB_PACKAGES = (
     "collaboraofficebasis-ooofonts",
     "collaboraofficebasis-writer",
 )
-RUNTIME_PACKAGES = (
+LIBREOFFICE_RUNTIME_PACKAGES = (
     "libreoffice-core",
     "libreoffice-writer",
     "libreoffice-calc",
     "libreoffice-impress",
     "libreoffice-gtk3",
     "python3-uno",
+)
+RUNTIME_PACKAGES = (
+    *LIBREOFFICE_RUNTIME_PACKAGES,
     "fonts-dejavu",
     "fonts-liberation",
     "fonts-crosextra-caladea",
@@ -79,6 +82,13 @@ def cleanup_stale_runtime_state(force: bool = False) -> dict[str, Any]:
     files, packages, and processes count as already clean. It is safe to call
     during startup and self-update.
     """
+
+    if not image_features.available("office"):
+        return {
+            "ok": True, "skipped": True, "removed": [], "installed": [],
+            "migrated": [], "warnings": [], "errors": [],
+            "reason": image_features.unavailable_reason(PLUGIN_NAME),
+        }
 
     removed: list[str] = []
     installed: list[str] = []
@@ -444,6 +454,8 @@ def _package_installed(package: str) -> bool:
 
 
 def _ensure_runtime_dependencies(installed: list[str], errors: list[str]) -> None:
+    if not image_features.available("office"):
+        return
     if os.geteuid() != 0 or not shutil.which("apt-get") or not shutil.which("dpkg-query"):
         return
     missing = [package for package in RUNTIME_PACKAGES if not _package_installed(package)]

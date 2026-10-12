@@ -1,4 +1,4 @@
-name: Measure And Validate Full Image
+name: Build And Measure Image Profiles
 
 on:
   push:
@@ -10,6 +10,30 @@ on:
         description: Publish experimental tags only after all feature checks pass
         type: boolean
         default: false
+      include_desktop:
+        description: Include Xfce Desktop and file manager (shared Browser display is retained)
+        type: boolean
+        default: true
+      include_office:
+        description: Include LibreOffice/UNO creation, editing and export
+        type: boolean
+        default: true
+      include_whisper:
+        description: Include local CPU Whisper (off requires external STT configuration)
+        type: boolean
+        default: true
+      include_kokoro:
+        description: Include local CPU Kokoro (off requires external TTS or explicit browser speech)
+        type: boolean
+        default: true
+      include_chromium:
+        description: Include internal Chromium (off requires Host browser configuration)
+        type: boolean
+        default: true
+      include_searxng:
+        description: Include bundled search server (off requires A0_SEARXNG_URL)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -79,6 +103,8 @@ jobs:
 
   candidate:
     needs: baseline
+    outputs:
+      image_base: ${{ steps.profile.outputs.image_base }}
     strategy:
       fail-fast: false
       matrix:
@@ -90,9 +116,19 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
-      IMAGE: ghcr.io/gitlogos/agent-zero-slim:experimental-${{ github.sha }}-${{ matrix.architecture }}
+      IMAGE_REPOSITORY: ghcr.io/gitlogos/agent-zero-slim
+      ARCHITECTURE: ${{ matrix.architecture }}
+      INCLUDE_DESKTOP: ${{ github.event_name != 'workflow_dispatch' || inputs.include_desktop }}
+      INCLUDE_OFFICE: ${{ github.event_name != 'workflow_dispatch' || inputs.include_office }}
+      INCLUDE_WHISPER: ${{ github.event_name != 'workflow_dispatch' || inputs.include_whisper }}
+      INCLUDE_KOKORO: ${{ github.event_name != 'workflow_dispatch' || inputs.include_kokoro }}
+      INCLUDE_CHROMIUM: ${{ github.event_name != 'workflow_dispatch' || inputs.include_chromium }}
+      INCLUDE_SEARXNG: ${{ github.event_name != 'workflow_dispatch' || inputs.include_searxng }}
     steps:
       - uses: actions/checkout@v4
+      - name: Select component profile
+        id: profile
+        run: python3 docker/slim/image_profile.py
       - name: Free ephemeral runner build space
         run: |
           set -euo pipefail
@@ -118,6 +154,12 @@ jobs:
             BRANCH=image-rebuild
             A0_REPOSITORY_URL=https://github.com/${{ github.repository }}.git
             A0_BUILD_COMMIT=${{ github.sha }}
+            A0_INCLUDE_DESKTOP=${{ env.INCLUDE_DESKTOP }}
+            A0_INCLUDE_OFFICE=${{ env.INCLUDE_OFFICE }}
+            A0_INCLUDE_WHISPER=${{ env.INCLUDE_WHISPER }}
+            A0_INCLUDE_KOKORO=${{ env.INCLUDE_KOKORO }}
+            A0_INCLUDE_CHROMIUM=${{ env.INCLUDE_CHROMIUM }}
+            A0_INCLUDE_SEARXNG=${{ env.INCLUDE_SEARXNG }}
       - name: Measure candidate before starting services
         run: |
           set -euo pipefail
@@ -147,6 +189,7 @@ jobs:
               "baseline_amd64_uncompressed_bytes": baseline,
               "amd64_saved_bytes": baseline - candidate if os.environ["ARCHITECTURE"] == "amd64" else None,
               "amd64_three_gb_target_met": baseline - candidate >= 3_000_000_000 if os.environ["ARCHITECTURE"] == "amd64" else None,
+              "included_features": json.load(open("measurements/candidate-filesystem.json"))["image_features"],
           }
           Path("measurements/comparison.json").write_text(json.dumps(result, indent=2))
           print(json.dumps(result, indent=2))
@@ -172,6 +215,9 @@ jobs:
               tests/test_speech_frontend.py tests/test_kokoro_tts.py \
               tests/test_speech_plugin_split.py tests/test_image_footprint_checks.py \
               tests/test_libreoffice_conversion.py
+            /opt/venv-a0/bin/python -m pytest -q \
+              tests/test_image_features.py tests/test_image_feature_runtime.py \
+              tests/test_plugin_activation_ui.py tests/test_plugin_hook_context.py
           ' 2>&1 | tee measurements/targeted-tests.log
           timeout 1500 docker exec -e PYTHONPATH=/a0 -w /a0 image-smoke \
             /opt/venv-a0/bin/python /checks/smoke.py --dockerized=true \
@@ -209,7 +255,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish checked multi-architecture experimental tag
         env:
-          IMAGE: ghcr.io/gitlogos/agent-zero-slim:experimental-${{ github.sha }}
+          IMAGE: ${{ needs.candidate.outputs.image_base }}
         run: |
+          test -n "$IMAGE"
           docker buildx imagetools create --tag "$IMAGE" "$IMAGE-amd64" "$IMAGE-arm64"
           docker buildx imagetools inspect "$IMAGE"

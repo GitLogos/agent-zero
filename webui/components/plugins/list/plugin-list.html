@@ -181,11 +181,11 @@
                                         <div class="plugin-description" x-text="plugin.description || 'No description provided.'"></div>
                                         <div class="plugin-status-group">
                                             <label class="toggle plugin-status-toggle"
-                                                   :class="{ 'disabled-appearance': plugin.always_enabled || $store.pluginListStore.loading }"
-                                                   :title="plugin.always_enabled ? 'Always enabled' : ($store.pluginListStore.isPluginEnabled(plugin) ? 'Disable plugin' : 'Enable plugin')">
+                                                   :class="{ 'disabled-appearance': plugin.always_enabled || plugin.unavailable_reason || $store.pluginListStore.loading }"
+                                                   :title="plugin.unavailable_reason || (plugin.always_enabled ? 'Always enabled' : ($store.pluginListStore.isPluginEnabled(plugin) ? 'Disable plugin' : 'Enable plugin'))">
                                                 <input type="checkbox"
                                                        :checked="$store.pluginListStore.isPluginEnabled(plugin)"
-                                                       :disabled="plugin.always_enabled || $store.pluginListStore.loading"
+                                                       :disabled="plugin.always_enabled || plugin.unavailable_reason || $store.pluginListStore.loading"
                                                        @change="$store.pluginListStore.updateToggle(plugin, $event.target.checked)"
                                                        @click.stop>
                                                 <span class="toggler"></span>

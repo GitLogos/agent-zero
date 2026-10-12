@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from helpers import chat_media, files, kvp
+from helpers import chat_media, files, kvp, image_features
 from helpers.defer import DeferredTask
 from helpers.errors import RepairableException
 from helpers.print_style import PrintStyle
@@ -1135,6 +1135,7 @@ class _BrowserRuntimeCore:
     async def _start(self) -> None:
         from plugins._browser import hooks
 
+        image_features.require("chromium")
         self._load_restore_state()
         preparation = hooks.prepare_playwright_cache()
         if preparation.get("errors") or not preparation.get("binary"):

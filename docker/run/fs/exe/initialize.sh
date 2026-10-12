@@ -49,6 +49,9 @@ raise_open_file_limit
 # Copy all contents from persistent /per to root directory (/) without overwriting
 cp -r --no-preserve=ownership,mode /per/* /
 
+# Persist exclusions even when the base restores service configuration.
+/opt/venv-a0/bin/python /ins/configure_image_features.py || exit $?
+
 # Ensure upload storage exists before API and connector callers can reference it.
 mkdir -p /a0/usr/uploads
 

@@ -2,6 +2,7 @@
 
 import ast
 import importlib.metadata
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -116,6 +117,11 @@ def elf_inventory(roots):
 def whisper_runtime():
     import torch
 
+    if importlib.util.find_spec("whisper") is None:
+        return {
+            "included": False, "torch_version": torch.__version__,
+            "torch_compiled_cuda_version": torch.version.cuda,
+        }
     triton_after_torch = "triton" in sys.modules
     import whisper
     from whisper.timing import dtw
@@ -195,6 +201,10 @@ def main():
         "uv_cache": cache_inventory("/root/.cache/uv"),
         "large_elf_files": elf_inventory(("/opt", "/usr")),
         "whisper_runtime": whisper_runtime(),
+        "image_features": (
+            json.loads(Path("/etc/a0-image-features.json").read_text())
+            if Path("/etc/a0-image-features.json").exists() else None
+        ),
         "bundled_huggingface_models": {
             str(path): disk_usage(path)
             for path in Path("/root/.cache/huggingface/hub").glob("models--*")

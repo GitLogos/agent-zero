@@ -123,17 +123,19 @@ const model = {
   },
 
   isPluginEnabled(plugin) {
+    if (plugin?.unavailable_reason) return false;
     if (plugin?.always_enabled) return true;
     return plugin?.toggle_state === "enabled";
   },
 
   toggleStatusLabel(plugin) {
+    if (plugin?.unavailable_reason) return "Not included in image";
     return this.isPluginEnabled(plugin) ? "ON" : "OFF";
   },
 
   async updateToggle(plugin, enabled) {
     if (!plugin?.name) return;
-    if (plugin.always_enabled) return;
+    if (plugin.always_enabled || plugin.unavailable_reason) return;
 
     const nextEnabled = !!enabled;
     const previousState = plugin.toggle_state;

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from helpers import files, virtual_desktop
+from helpers import files, virtual_desktop, image_features
 from helpers.localization import Localization
 from plugins._desktop.helpers import desktop_state
 from plugins._office.helpers import document_store, libreoffice
@@ -152,6 +152,8 @@ class DesktopSessionManager:
             }
 
     def open(self, doc: dict[str, Any], *, refresh: bool = False) -> dict[str, Any]:
+        if reason := image_features.unavailable_reason("_office"):
+            return {"available": False, "reason": reason}
         ext = str(doc.get("extension") or "").lower()
         if ext not in OFFICIAL_EXTENSIONS:
             return {"available": False, "reason": f".{ext} does not use the LibreOffice desktop surface."}
@@ -590,6 +592,7 @@ class DesktopSessionManager:
         )
 
     def _ensure_system_desktop_locked(self) -> DesktopSession:
+        image_features.require("desktop")
         target_timezone = Localization.get().get_timezone()
         existing = self._sessions.get(SYSTEM_SESSION_ID)
         if existing and existing.alive():
@@ -755,6 +758,7 @@ class DesktopSessionManager:
         )
 
     def _open_document_locked(self, session: DesktopSession, doc: dict[str, Any]) -> None:
+        image_features.require("office")
         soffice = libreoffice.find_soffice()
         if not soffice:
             raise RuntimeError("LibreOffice is not installed in this runtime.")
@@ -1032,7 +1036,7 @@ class DesktopSessionManager:
 
     def _prepare_desktop_launchers(self, session: DesktopSession) -> None:
         soffice = libreoffice.find_soffice()
-        if not soffice:
+        if not soffice and image_features.available("office"):
             raise RuntimeError("LibreOffice is not installed in this runtime.")
         workdir_home = document_store.document_home()
         workdir_home.mkdir(parents=True, exist_ok=True)
@@ -1114,7 +1118,10 @@ class DesktopSessionManager:
             ("LibreOffice Writer", "libreoffice-writer", "--writer", "Office;WordProcessor;"),
             ("LibreOffice Calc", "libreoffice-calc", "--calc", "Office;Spreadsheet;"),
             ("LibreOffice Impress", "libreoffice-impress", "--impress", "Office;Presentation;"),
-        )
+        ) if image_features.available("office") else ()
+        if not image_features.available("office"):
+            for name in ("LibreOffice Writer", "LibreOffice Calc", "LibreOffice Impress"):
+                _remove_path_if_owned(desktop_dir / f"{name}.desktop")
         for name, icon, mode, categories in office_launchers:
             _write_desktop_launcher(
                 desktop_dir / f"{name}.desktop",
@@ -1731,7 +1738,7 @@ def collect_desktop_status() -> dict[str, Any]:
             "xfce4-settings-manager",
             "gio",
         )
-        if not binaries[name]
+        if not binaries[name] and (name != "soffice" or image_features.available("office"))
     ]
     missing.extend(
         name
@@ -1747,6 +1754,7 @@ def collect_desktop_status() -> dict[str, Any]:
     installing = bool(preparation.get("preparing")) and not healthy
     return {
         "ok": True,
+        "office_available": image_features.available("office"),
         "healthy": healthy,
         "state": "healthy" if healthy else "installing" if installing else "missing",
         "installing": installing,
@@ -2257,15 +2265,13 @@ def _editor_text_handler_mime_types() -> tuple[str, ...]:
 
 def _write_mimeapps_defaults(path: Path, url_desktop_id: str, editor_desktop_id: str) -> None:
     url_associations = ";".join([url_desktop_id, ""])
-    # LibreOffice Writer stays the default so double-clicks keep the user (and
-    # agents) inside the Desktop; the Agent Zero Editor remains an "Open With"
-    # option. When Writer's desktop entry is missing, xdg falls back through
-    # the added associations to the editor.
-    text_associations = ";".join([WRITER_HANDLER_DESKTOP_ID, editor_desktop_id, ""])
+    # Full images default to Writer; Office-free images use the Editor bridge.
+    text_default = WRITER_HANDLER_DESKTOP_ID if image_features.available("office") else editor_desktop_id
+    text_associations = ";".join(dict.fromkeys([text_default, editor_desktop_id, ""]))
     lines = [
         "[Default Applications]",
         *(f"{mime_type}={url_desktop_id}" for mime_type in _url_handler_mime_types()),
-        *(f"{mime_type}={WRITER_HANDLER_DESKTOP_ID}" for mime_type in _editor_text_handler_mime_types()),
+        *(f"{mime_type}={text_default}" for mime_type in _editor_text_handler_mime_types()),
         "",
         "[Added Associations]",
         *(f"{mime_type}={url_associations}" for mime_type in _url_handler_mime_types()),

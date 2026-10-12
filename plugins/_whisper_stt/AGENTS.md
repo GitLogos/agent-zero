@@ -20,6 +20,7 @@
 - Keep connection secrets out of status; external readiness means configured, not connection-tested. External model IDs are not local model-size choices.
 - Settings initialize absent connection fields only; explicit invalid external settings must not silently become local/default settings.
 - Only local model changes trigger local preload; microphone cancellation must suppress stale transcripts without changing send/draft behavior.
+- Images may omit local Whisper; imports remain lazy, preload/model changes cannot download it, and selected local mode reports an explicit configuration error. Status/settings expose local availability; external STT still works without the local library and saved backend choices remain unchanged.
 - Keep all `data-whisper-microphone` controls synchronized with the same microphone status.
 - Optional final-transcript handlers must receive the configured draft/send mode without changing the main chat microphone's delivery behavior.
 - Do not expose raw audio or transcriptions beyond intended UI/API paths.

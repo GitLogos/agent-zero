@@ -24,7 +24,7 @@
           <label class="browser-config-field">
             <span class="browser-config-field-label">Browser location</span>
             <select x-model="$store.browserConfig.config.runtime_backend">
-              <option value="container">Internal Docker browser</option>
+              <option value="container" :disabled="$store.browserConfig.internalAvailable === false">Internal Docker browser</option>
               <option value="host_required">Host browser on connected computer</option>
             </select>
             <span
@@ -40,6 +40,10 @@
               Uses Safari, Chrome, Edge, Brave, Opera, Vivaldi, or Chromium on a computer connected through Launcher or A0 CLI. The browser opens when the agent first needs it.
             </span>
           </label>
+
+          <div class="section-description" x-show="$store.browserConfig.internalAvailable === false">
+            Bundled Chromium was excluded at image build time. Explicitly select the Host browser backend and connect a computer through Launcher or A0 CLI.
+          </div>
 
           <div
             class="browser-config-note browser-config-success"

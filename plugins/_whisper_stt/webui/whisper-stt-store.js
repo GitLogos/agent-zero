@@ -63,6 +63,7 @@ const model = {
     waiting_timeout: 2000,
   },
   modelReady: false,
+  localAvailable: true,
   modelLoading: false,
   loadedModel: "",
   packageVersion: "",
@@ -126,6 +127,7 @@ const model = {
         waiting_timeout: Number(status?.config?.waiting_timeout ?? 2000),
       };
       this.modelReady = !!status?.model?.ready;
+      this.localAvailable = status?.local_available !== false;
       this.modelLoading = !!status?.model?.loading;
       this.loadedModel = status?.model?.loaded_model || "";
       this.packageVersion = status?.package?.version || "";

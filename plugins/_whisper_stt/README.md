@@ -7,6 +7,8 @@ Speech-to-text plugin with local CPU Whisper (default) and an explicit external 
 - Registers Whisper as the active STT provider when the plugin is enabled.
 - Owns the microphone runtime, device selector UI, message delivery mode, and plugin APIs.
 - Keeps dependency installation and model bootstrap on the Docker/bootstrap path.
+- With `A0_INCLUDE_WHISPER=false`, local transcription/model downloads are unavailable.
+  Select and configure the external backend explicitly; saved local settings are not switched automatically.
 
 ## Config
 

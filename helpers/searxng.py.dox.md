@@ -13,11 +13,14 @@
 - Top-level functions:
 - `async search(query: str)`
 - `async _search(query: str)`
+- `search_url() -> str`
 - Notable constants/configuration names: `URL`.
 
 ## Runtime Contracts
 
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
+- `A0_SEARXNG_URL` selects an explicit full HTTP(S) `/search` endpoint with JSON enabled; reject embedded credentials/query/fragment and malformed URLs. No endpoint with excluded bundled SearXNG raises an actionable error instead of contacting an absent local server.
+- Included legacy images retain their local URL. Requests preserve form fields `q`/`format=json` and raise on HTTP failure.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: network calls, settings/state persistence.
 - Imported dependency areas include: `aiohttp`, `helpers`.
@@ -36,7 +39,7 @@
 ## Verification
 
 - Run targeted tests for changed helper behavior; run security regressions for auth, filesystem, WebSocket, tunnel, upload, or secret-handling helpers.
-- No direct test reference was found by name search; choose the nearest behavioral test or perform a focused smoke check.
+- Run `tests/test_image_feature_runtime.py` and the native loopback external-search gate.
 
 ## Child DOX Index
 

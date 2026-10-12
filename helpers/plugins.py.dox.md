@@ -51,6 +51,7 @@
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Plugins marked `always_enabled` remain in runtime discovery regardless of
   stale global or scoped disable files, and disable attempts are rejected.
+- Persistent image exclusions take precedence over activation rules, including `always_enabled`; Desktop/Office cannot be enabled by saved global/project/profile toggles. List items and toggle status expose `unavailable_reason`; enabling an excluded plugin fails before writes.
 - Config hooks receive `hook_context={"caller": caller}` with one of `ui`,
   `agent`, or `api`; this is behavioral context, not an authorization boundary.
 - Plugin list, enabled-plugin, and enabled-path lookups cache empty results like any other value; `clear_plugin_cache` and plugin watchdog events invalidate them.
