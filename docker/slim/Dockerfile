@@ -1,30 +1,12 @@
-# Assemble the owned base, then export only its cleaned merged filesystem.
-FROM kalilinux/kali-rolling AS assembled
+# Preserve the verified Python 3.13-compatible vendor base, but not its dead layers.
+FROM agent0ai/agent-zero-base@sha256:342ffbf59b5d2771c01f348cb9ee3e05121ad7a639aa5bff5c48c2912685eda8 AS assembled
 
 ARG BRANCH=main
 ARG A0_REPOSITORY_URL=https://github.com/agent0ai/agent-zero.git
 ARG A0_BUILD_COMMIT
 ENV BRANCH=$BRANCH
 ENV A0_REPOSITORY_URL=$A0_REPOSITORY_URL
-ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 TZ=UTC
 ENV UV_NO_CACHE=1
-
-COPY ./docker/base/fs/ /
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y locales tzdata \
-    && sed -i 's/# \(en_US\.UTF-8 .*\)/\1/' /etc/locale.gen \
-    && locale-gen \
-    && update-locale LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 \
-    && ln -sf /usr/share/zoneinfo/UTC /etc/localtime \
-    && echo UTC > /etc/timezone \
-    && bash /ins/install_base_packages1.sh \
-    && bash /ins/install_base_packages2.sh \
-    && bash /ins/install_base_packages3.sh \
-    && bash /ins/install_base_packages4.sh \
-    && bash /ins/install_python.sh \
-    && bash /ins/install_searxng.sh \
-    && bash /ins/configure_ssh.sh \
-    && bash /ins/after_install.sh
 
 COPY ./docker/run/fs/ /
 RUN bash /ins/pre_install.sh "$BRANCH" \

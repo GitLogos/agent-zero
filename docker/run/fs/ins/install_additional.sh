@@ -15,7 +15,6 @@ fi
 ATK_VERSION="2.60.3-1"
 LIBREOFFICE_VERSION="4:26.2.4.2-1"
 XPRA_VERSION="6.5.2-r0-1"
-PYTHON_DEFAULT_VERSION="3.13.9-3+b1"
 arch="$(dpkg --print-architecture)"
 
 XPRA_HTML5_VERSION="19-r1-1"
@@ -74,9 +73,6 @@ EOF
 echo "deb [arch=$arch signed-by=/usr/share/keyrings/xpra.asc] https://xpra.org trixie main" >>/etc/apt/a0-desktop.list
 apt-get "${APT_OPTIONS[@]}" update
 DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTIONS[@]}" install -y --no-install-recommends --allow-downgrades \
-  "python3=$PYTHON_DEFAULT_VERSION" \
-  "python3-minimal=$PYTHON_DEFAULT_VERSION" \
-  "libpython3-stdlib=$PYTHON_DEFAULT_VERSION" \
   "${ATK_PACKAGES[@]}" \
   gir1.2-gtk-3.0 \
   "${LIBREOFFICE_PACKAGES[@]}" \

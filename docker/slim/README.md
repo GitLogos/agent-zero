@@ -1,9 +1,16 @@
 # Agent Zero slim image
 
-This experimental image rebuilds the owned Kali base and exports its cleaned
-merged filesystem into a fresh final stage. It retains both Python runtimes,
+This experimental image reconstructs the cleaned merged filesystem of an
+immutable, verified Kali-based vendor image into a fresh final stage. The vendor
+base is an intermediate only; none of its deleted/overwritten lower-layer payload
+is inherited by the final image. It retains both Python runtimes,
 native compilation tools, installed libraries, Git history, and preloaded models.
 Installation caches and overwritten/deleted lower-layer files are not exported.
+
+The pinned vendor digest matches the measured baseline's base layers. Its system
+Python and libraries are compatible with the pinned Xpra/UNO desktop stack;
+current rolling system Python 3.14 and newer version-coupled GLib packages are
+not. Updating this digest requires rebuilding and running the full feature gate.
 
 Included:
 

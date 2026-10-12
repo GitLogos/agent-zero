@@ -23,7 +23,7 @@
 ## Work Guidance
 
 - Eliminate installation caches and build residue in the layer that creates them.
-- The candidate rebuilds the owned base scripts and copies only the cleaned merged root into its final stage; retain original runtime environment defaults.
+- The candidate uses the immutable, verified Python 3.13-compatible base as an intermediate only, then copies the cleaned merged root into its own final stage; retain original runtime environment defaults. Unpinned current Kali defaults and version-coupled GLib packages are not compatible with the pinned Xpra/UNO stack.
 - Use distribution and APT inventories to identify large components before changing dependency resolution.
 - Treat separate `du` totals as overlapping; hardlinks and nested paths cannot be added.
 
