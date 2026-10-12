@@ -11,12 +11,14 @@ class Synthesize(ApiHandler):
         if not text:
             return Response(status=400, response="Missing text")
 
+        config = runtime.get_config()
         try:
-            audio = await runtime.synthesize_sentences([text])
+            audio = await runtime.synthesize_sentences([text], config)
             return {
                 "success": True,
                 "audio": audio,
                 "mime_type": "audio/wav",
+                "backend": config["backend"],
             }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": str(e), "backend": config["backend"]}

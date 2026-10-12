@@ -1,3 +1,9 @@
+backend: local
+external_base_url: ""
+external_api_key: ""
+external_model: ""
+external_voice: ""
+request_timeout: 120
 voice: am_puck,am_onyx
 voice_weights: {}
 speed: 1.1

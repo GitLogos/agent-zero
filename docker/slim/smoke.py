@@ -4,15 +4,23 @@ import asyncio
 import base64
 import cProfile
 import json
+import hashlib
+import http.cookiejar
+import http.server
+import importlib.metadata
+import importlib.util
+import io
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
+import threading
 import traceback
 import urllib.request
 import zipfile
+import wave
 
 
 def run(*args, **kwargs):
@@ -37,6 +45,23 @@ def runtimes():
         run("gcc", str(source), "-o", str(binary))
         assert run(str(binary)) == "native-code-ok"
     assert run("llvm-config", "--version")
+    if "--baseline" not in sys.argv:
+        from packaging.requirements import Requirement
+        import whisper
+
+        run("uv", "pip", "install", "--python", sys.executable, "-r", "/a0/requirements.txt")
+        distribution = importlib.metadata.distribution("openai-whisper")
+        assert distribution.version == "20250625+a0cpu.1"
+        assert importlib.util.find_spec("triton") is None
+        for raw in distribution.requires:
+            requirement = Requirement(raw)
+            if requirement.name.lower() == "triton":
+                assert requirement.marker and not requirement.marker.evaluate({"extra": ""})
+        provenance = json.loads(distribution.read_text("a0-cpu-provenance.json"))
+        for name, digest in provenance["payload_sha256"].items():
+            assert hashlib.sha256(distribution.locate_file(name).read_bytes()).hexdigest() == digest
+        assert {"tiny", "base", "small", "medium", "large", "turbo"} <= set(whisper.available_models())
+        run("uv", "pip", "check", "--python", sys.executable)
     print("Python 3.12 framework, Python 3.13 tasks, UNO, Node/npm and native compilation work.")
 
 
@@ -268,6 +293,114 @@ async def speech():
     print("Kokoro synthesizes speech and Whisper base transcribes the generated audio.")
 
 
+def external_speech_api():
+    """Exercise authenticated live WebUI routes against a loopback-only fixture service."""
+    from helpers import plugins
+
+    audio = io.BytesIO()
+    with wave.open(audio, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(24000)
+        wav.writeframes(b"\x00\x01" * 240)
+    fixture = audio.getvalue()
+    received = []
+    fixture_key = os.urandom(16).hex()
+    expected_key = ""
+    fail = False
+
+    class Provider(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            nonlocal fail
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            received.append(self.path)
+            assert self.headers.get("Authorization", "") == expected_key
+            if fail:
+                payload, mime, status = b"fixture provider error", "text/plain", 503
+            elif self.path == "/v1/audio/transcriptions":
+                assert fixture in body and b"fixture-model" in body
+                assert b'name="language"' not in body
+                payload, mime, status = b'{"text":"Fixture transcript","language":"en"}', "application/json", 200
+            elif self.path == "/v1/audio/speech":
+                request = json.loads(body)
+                assert request == {
+                    "model": "fixture-model", "voice": "fixture-voice",
+                    "input": "Fixture text.", "response_format": "wav", "speed": 1.4,
+                }, request
+                payload, mime, status = fixture, "audio/wav", 200
+            else:
+                raise AssertionError(self.path)
+            self.send_response(status)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    worker = threading.Thread(target=server.serve_forever)
+    worker.start()
+    client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    origin = "http://127.0.0.1"
+    def api(path, data):
+        request = urllib.request.Request(origin + "/api/" + path, data=json.dumps(data).encode(), headers={
+            "Content-Type": "application/json", "Origin": origin, "X-CSRF-Token": csrf["token"],
+        })
+        with client.open(request, timeout=30) as response:
+            return json.load(response)
+
+    names = ("_whisper_stt", "_kokoro_tts")
+    backups = {}
+    try:
+        with client.open(urllib.request.Request(origin + "/api/csrf_token", headers={"Origin": origin}), timeout=30) as response:
+            csrf = json.load(response)
+        assert csrf["ok"], csrf
+        for name in names:
+            path = Path(plugins.determine_plugin_asset_path(name, "", "", "config.json"))
+            backups[path] = path.read_bytes() if path.exists() else None
+        for key in ("", fixture_key):
+            expected_key = "Bearer " + key if key else ""
+            for name in names:
+                result = api("plugins", {
+                    "action": "save_config", "plugin_name": name, "settings": {
+                        "backend": "openai", "external_base_url": f"http://127.0.0.1:{server.server_port}/v1",
+                        "external_api_key": key, "external_model": "fixture-model",
+                        "external_voice": "fixture-voice", "language": "auto", "speed": 1.4,
+                    },
+                })
+                assert result["ok"], result
+                status = api(f"plugins/{name}/status", {})
+                assert status["enabled"] and status["model"]["ready"], status
+                assert "external_api_key" not in status["config"]
+                assert "external_base_url" not in status["config"]
+            stt = api("plugins/_whisper_stt/transcribe", {"audio": base64.b64encode(fixture).decode()})
+            assert stt["success"] and stt["text"] == "Fixture transcript", stt
+            tts = api("plugins/_kokoro_tts/synthesize", {"text": "Fixture text."})
+            assert tts["success"] and tts["mime_type"] == "audio/wav", tts
+            assert base64.b64decode(tts["audio"]) == fixture
+        fail = True
+        for path, data in (
+            ("plugins/_whisper_stt/transcribe", {"audio": base64.b64encode(fixture).decode()}),
+            ("plugins/_kokoro_tts/synthesize", {"text": "Fixture text."}),
+        ):
+            failure = api(path, data)
+            assert not failure["success"] and "HTTP 503" in failure["error"], failure
+            assert "fixture provider error" not in failure["error"]
+        assert len(received) == 6, received
+    finally:
+        for path, content in backups.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(content)
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+    print("Live STT/TTS APIs use loopback fixtures with keyless/authenticated calls, WAV playback and explicit errors.")
+
+
 def main():
     from helpers import runtime
 
@@ -297,6 +430,7 @@ def main():
             "live_office": live_office,
             "search_and_services": search_and_services,
             "speech_synthesis_and_transcription": lambda: asyncio.run(speech()),
+            "external_speech_api": external_speech_api,
         }
     results = {}
     for name, check in cases.items():

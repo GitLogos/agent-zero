@@ -14,6 +14,7 @@ def test_config_keeps_legacy_voice_and_normalizes_weighted_blends() -> None:
         {"voice": "custom/voice.pt", "speed": 2.2}
     )
     assert legacy == {
+        **runtime.DEFAULT_CONFIG,
         "voice": "custom/voice.pt",
         "voice_weights": {},
         "speed": 2.2,
@@ -33,6 +34,7 @@ def test_config_keeps_legacy_voice_and_normalizes_weighted_blends() -> None:
         }
     )
     assert weighted == {
+        **runtime.DEFAULT_CONFIG,
         "voice": "af_heart,am_puck",
         "voice_weights": {"af_heart": 3.0, "am_puck": 1.0},
         "speed": 1.1,

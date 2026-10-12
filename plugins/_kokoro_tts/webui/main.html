@@ -16,7 +16,7 @@
       <div>
         <div class="section-title">Kokoro TTS</div>
         <div class="section-description">
-          Built-in Kokoro speech synthesis. Dependency installation remains on the
+          Local Kokoro or configured OpenAI-compatible speech synthesis. Dependency installation remains on the
           Docker/bootstrap path; disabling this plugin returns spoken output to the
           browser fallback.
         </div>
@@ -41,9 +41,18 @@
           <div class="speech-plugin-card">
             <div class="field-title">Resolved Config</div>
             <div class="status-row">
+              <span class="status-key">Backend</span>
+              <span class="status-value" x-text="$store.kokoroTts.backendSummary"></span>
+            </div>
+            <div class="status-row" x-show="$store.kokoroTts.config.backend === 'openai'">
+              <span class="status-key">Model</span>
+              <span class="status-value" x-text="$store.kokoroTts.config.external_model"></span>
+            </div>
+            <div class="status-row">
               <span class="status-key">Voice</span>
               <span class="status-value mono" x-text="$store.kokoroTts.voiceSummary"></span>
             </div>
+            <div class="field-description" x-show="$store.kokoroTts.error" x-text="$store.kokoroTts.error"></div>
             <div class="status-row">
               <span class="status-key">Speed</span>
               <span class="status-value" x-text="$store.kokoroTts.config.speed"></span>

@@ -1,6 +1,7 @@
 import importlib.metadata
 
 from helpers.api import ApiHandler, Request, Response
+from helpers import external_speech
 from plugins._whisper_stt.helpers import migration, runtime
 
 
@@ -15,14 +16,17 @@ class Status(ApiHandler):
         except Exception as e:
             package_error = str(e)
 
+        config = runtime.get_config()
+        error = external_speech.configuration_error(config)
         return {
             "plugin": "_whisper_stt",
             "enabled": runtime.is_globally_enabled(),
-            "config": runtime.get_config(),
+            "config": external_speech.public_config(config),
+            "configuration_error": error,
             "model": {
-                "ready": await runtime.is_downloaded(),
-                "loading": await runtime.is_downloading(),
-                "loaded_model": runtime.get_loaded_model_name(),
+                "ready": False if error else await runtime.is_downloaded(),
+                "loading": False if error else await runtime.is_downloading(),
+                "loaded_model": "" if error else runtime.get_loaded_model_name(),
             },
             "package": {
                 "version": package_version,

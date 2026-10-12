@@ -9,8 +9,17 @@ ENV A0_REPOSITORY_URL=$A0_REPOSITORY_URL
 ENV UV_NO_CACHE=1
 
 COPY ./docker/run/fs/ /
-RUN bash /ins/pre_install.sh "$BRANCH" \
-    && A0_BUILD_COMMIT="$A0_BUILD_COMMIT" bash /ins/install_A0.sh "$BRANCH" \
+COPY ./docker/slim/prepare_cpu_whisper.py ./docker/slim/whisper-build-requirements.txt /ins/
+RUN /opt/venv-a0/bin/python /ins/prepare_cpu_whisper.py \
+        --output /opt/a0-wheels --requirements /ins/whisper-build-requirements.txt \
+    && bash /ins/pre_install.sh "$BRANCH" \
+    && A0_BUILD_COMMIT="$A0_BUILD_COMMIT" \
+        A0_WHISPER_WHEEL=/opt/a0-wheels/openai_whisper-20250625+a0cpu.1-py3-none-any.whl \
+        bash /ins/install_A0.sh "$BRANCH" \
+    && if /opt/venv-a0/bin/python -c 'import importlib.util,sys; sys.exit(importlib.util.find_spec("triton") is None)'; then \
+        uv pip uninstall --python /opt/venv-a0/bin/python triton; \
+       fi \
+    && uv pip check --python /opt/venv-a0/bin/python \
     && bash /ins/install_additional.sh "$BRANCH" \
     && bash /ins/post_install.sh "$BRANCH" \
     && rm -rf /root/.cache/uv /root/.cache/pip /opt/pyenv/cache \
@@ -25,11 +34,14 @@ COPY --from=assembled / /
 
 ARG BRANCH=main
 ARG A0_REPOSITORY_URL=https://github.com/agent0ai/agent-zero.git
+ARG A0_BUILD_COMMIT
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 TZ=UTC
 ENV BRANCH=$BRANCH
 ENV A0_REPOSITORY_URL=$A0_REPOSITORY_URL
 ENV A0_SELF_UPDATE_REMOTE_URL=$A0_REPOSITORY_URL
+LABEL org.opencontainers.image.source=$A0_REPOSITORY_URL \
+      org.opencontainers.image.revision=$A0_BUILD_COMMIT
 WORKDIR /
 
 EXPOSE 22 80 9000-9009

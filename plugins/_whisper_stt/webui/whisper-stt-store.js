@@ -53,6 +53,8 @@ const model = {
   error: "",
   enabled: false,
   config: {
+    backend: "local",
+    external_model: "",
     model_size: "base",
     language: "en",
     message_mode: "send",
@@ -113,6 +115,8 @@ const model = {
       this.statusLoaded = true;
       this.enabled = !!status?.enabled;
       this.config = {
+        backend: status?.config?.backend || "local",
+        external_model: status?.config?.external_model || "",
         model_size: status?.config?.model_size || "base",
         language: status?.config?.language || "en",
         message_mode:
@@ -125,6 +129,7 @@ const model = {
       this.modelLoading = !!status?.model?.loading;
       this.loadedModel = status?.model?.loaded_model || "";
       this.packageVersion = status?.package?.version || "";
+      this.error = status?.configuration_error || "";
 
       if (this.enabled) {
         this.registerProvider();
@@ -170,6 +175,7 @@ const model = {
   async openConfig() {
     const { store } = await import("/components/plugins/plugin-settings-store.js");
     await store.openConfig(PLUGIN_NAME);
+    await this.refreshStatus();
   },
 
   openPanel() {
@@ -383,6 +389,8 @@ const model = {
 
   get statusText() {
     if (!this.enabled) return "Disabled";
+    if (this.error) return "Configuration error";
+    if (this.config.backend === "openai") return this.modelReady ? "Configured" : "Not configured";
     if (this.modelLoading) return "Loading";
     if (this.modelReady) return "Ready";
     return "Idle";
@@ -393,6 +401,14 @@ const model = {
     if (this.modelLoading) return "warn";
     if (this.modelReady) return "ok";
     return "warn";
+  },
+
+  get backendSummary() {
+    return this.config.backend === "local" ? "Local Whisper" : "External OpenAI-compatible";
+  },
+
+  get modelSummary() {
+    return this.config.backend === "openai" ? this.config.external_model : this.config.model_size;
   },
 
   get selectedDeviceLabel() {
@@ -421,6 +437,7 @@ class MicrophoneInput {
     this.analysisFrame = null;
     this.selectedDeviceId = "";
     this._status = Status.INACTIVE;
+    this.transcriptionController = null;
   }
 
   get status() {
@@ -636,19 +653,26 @@ class MicrophoneInput {
 
     const audioBlob = new Blob(this.audioChunks, { type: "audio/wav" });
     const audio = await this.convertBlobToBase64(audioBlob);
+    if (this.status === Status.INACTIVE) return;
 
     try {
+      const controller = new AbortController();
+      this.transcriptionController = controller;
       const result = await callJsonApi(`/plugins/${PLUGIN_NAME}/transcribe`, {
         audio,
-      });
+      }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (!result?.success) throw new Error(result?.error || "Transcription failed.");
       const text = this.filterResult(result?.text || "");
       if (text) {
         await this.updateCallback(text, true);
       }
     } catch (error) {
+      if (error?.name === "AbortError") return;
       console.error("[Whisper STT] Transcription failed", error);
       window.toastFetchError?.("Transcription error", error);
     } finally {
+      this.transcriptionController = null;
       this.audioChunks = [];
       if (this.status === Status.PROCESSING) {
         this.status = Status.LISTENING;
@@ -678,7 +702,6 @@ class MicrophoneInput {
       (normalized.startsWith("[") && normalized.endsWith("]"));
 
     if (wrapped) {
-      console.log(`[Whisper STT] Discarding transcription: ${normalized}`);
       return "";
     }
 
@@ -704,6 +727,7 @@ class MicrophoneInput {
   }
 
   dispose() {
+    this.transcriptionController?.abort();
     clearTimeout(this.waitingTimer);
     this.waitingTimer = null;
     this.stopAudioAnalysis();

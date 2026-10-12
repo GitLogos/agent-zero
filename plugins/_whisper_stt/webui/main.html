@@ -16,7 +16,7 @@
       <div>
         <div class="section-title">Whisper STT</div>
         <div class="section-description">
-          Built-in Whisper transcription. Dependency installation stays on the Docker/bootstrap path;
+          Local Whisper or configured OpenAI-compatible transcription. Dependency installation stays on the Docker/bootstrap path;
           this plugin only owns the speech-to-text behavior, UI, and routing.
         </div>
 
@@ -32,7 +32,7 @@
               <span class="status-badge" :class="$store.whisperStt.statusClass" x-text="$store.whisperStt.statusText"></span>
             </div>
             <div class="status-row" x-show="$store.whisperStt.loadedModel">
-              <span class="status-key">Loaded</span>
+              <span class="status-key">Model</span>
               <span class="status-value" x-text="$store.whisperStt.loadedModel"></span>
             </div>
             <div class="status-row" x-show="$store.whisperStt.packageVersion">
@@ -44,9 +44,14 @@
           <div class="speech-plugin-card">
             <div class="field-title">Resolved Config</div>
             <div class="status-row">
-              <span class="status-key">Model size</span>
-              <span class="status-value" x-text="$store.whisperStt.config.model_size"></span>
+              <span class="status-key">Backend</span>
+              <span class="status-value" x-text="$store.whisperStt.backendSummary"></span>
             </div>
+            <div class="status-row">
+              <span class="status-key">Model</span>
+              <span class="status-value" x-text="$store.whisperStt.modelSummary"></span>
+            </div>
+            <div class="field-description" x-show="$store.whisperStt.error" x-text="$store.whisperStt.error"></div>
             <div class="status-row">
               <span class="status-key">Language</span>
               <span class="status-value" x-text="$store.whisperStt.config.language"></span>

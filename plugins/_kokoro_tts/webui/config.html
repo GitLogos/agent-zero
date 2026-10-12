@@ -28,6 +28,8 @@
       { id: 'am_santa', label: 'Santa', group: 'American Male' },
     ],
     initConfig() {
+      config.backend ??= 'local';
+      config.request_timeout ??= 120;
       if (!config.voice) config.voice = 'am_puck,am_onyx';
       const sanitized = {};
       const weights = config.voice_weights;
@@ -115,11 +117,47 @@
       <div class="plugin-config-page" x-init="initConfig()">
         <div class="section-title">Kokoro TTS</div>
         <div class="section-description">
-          Choose a voice or blend several voices in memory. Disabling this plugin
+          Choose local CPU Kokoro or an OpenAI-compatible audio service. Local voices can be blended in memory. Disabling this plugin
           returns spoken output to the browser speech API.
         </div>
 
         <div class="field">
+          <div class="field-label">
+            <div class="field-title">Backend</div>
+            <div class="field-description">Local is the default. External sends text to your service; failures do not fall back to local or browser speech.</div>
+          </div>
+          <div class="field-control">
+            <select x-model="config.backend">
+              <option value="local">Local Kokoro (CPU)</option>
+              <option value="openai">External OpenAI-compatible API</option>
+            </select>
+          </div>
+        </div>
+
+        <div x-show="config.backend === 'openai'">
+          <div class="field">
+            <div class="field-label"><div class="field-title">Base URL</div><div class="field-description">Include the API prefix, for example https://provider.example/v1. An origin-only URL uses /v1. No query parameters or embedded credentials.</div></div>
+            <div class="field-control"><input type="url" x-model.trim="config.external_base_url" placeholder="http://speech-server:8000/v1" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">API key</div><div class="field-description">Saved in authenticated server-side plugin settings. Leave empty for keyless local services.</div></div>
+            <div class="field-control"><input type="password" x-model="config.external_api_key" autocomplete="off" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">External model</div><div class="field-description">Model identifier accepted by POST /audio/speech.</div></div>
+            <div class="field-control"><input type="text" x-model.trim="config.external_model" placeholder="tts-1" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">External voice</div><div class="field-description">Provider voice identifier. Saved local Kokoro voices and weighted blends are local-only and are not sent. The service must support WAV responses and the configured speed.</div></div>
+            <div class="field-control"><input type="text" x-model.trim="config.external_voice" placeholder="alloy" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Request timeout</div><div class="field-description">Total external request time in seconds, including response download.</div></div>
+            <div class="field-control"><input type="number" min="1" x-model.number="config.request_timeout" /></div>
+          </div>
+        </div>
+
+        <div class="field" x-show="config.backend === 'local'">
           <div class="field-label">
             <div class="field-title">Voice expression</div>
             <div class="field-description">
@@ -142,7 +180,7 @@
           </div>
         </div>
 
-        <div class="field">
+        <div class="field" x-show="config.backend === 'local'">
           <div class="field-label">
             <div class="field-title">Voice blend</div>
             <div class="field-description">

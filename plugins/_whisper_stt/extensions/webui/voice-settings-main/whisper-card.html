@@ -4,7 +4,7 @@
       <div>
         <div class="voice-plugin-title">Whisper STT</div>
         <div class="voice-plugin-description">
-          Browser microphone input routed into the built-in Whisper transcription backend.
+          Browser microphone input routed into local Whisper or your configured external service.
         </div>
       </div>
       <span class="voice-plugin-badge" :class="`is-${$store.whisperStt.statusClass || 'warn'}`" x-text="$store.whisperStt.statusText || 'Idle'"></span>
@@ -12,8 +12,12 @@
 
     <div class="voice-plugin-meta">
       <div class="voice-plugin-meta-row">
-        <span>Model size</span>
-        <span x-text="$store.whisperStt.config.model_size || 'base'"></span>
+        <span>Backend</span>
+        <span x-text="$store.whisperStt.backendSummary"></span>
+      </div>
+      <div class="voice-plugin-meta-row">
+        <span>Model</span>
+        <span x-text="$store.whisperStt.modelSummary"></span>
       </div>
       <div class="voice-plugin-meta-row">
         <span>Language</span>

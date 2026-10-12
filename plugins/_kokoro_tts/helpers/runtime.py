@@ -11,6 +11,7 @@ from typing import Any
 import soundfile as sf
 
 from helpers import plugins
+from helpers import external_speech
 from helpers.notification import (
     NotificationManager,
     NotificationPriority,
@@ -26,6 +27,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 PLUGIN_NAME = "_kokoro_tts"
 DEFAULT_CONFIG = {
+    **external_speech.DEFAULT_CONFIG,
+    "external_voice": "",
     "voice": "am_puck,am_onyx",
     "voice_weights": {},
     "speed": 1.1,
@@ -40,6 +43,8 @@ def normalize_config(config: dict[str, Any] | None) -> dict[str, Any]:
     normalized = {**DEFAULT_CONFIG, "voice_weights": {}}
     if not isinstance(config, dict):
         return normalized
+    normalized.update(external_speech.normalize_config(config))
+    normalized["external_voice"] = str(config.get("external_voice", "") or "").strip()
 
     voice = str(config.get("voice", normalized["voice"]) or "").strip()
     if voice:
@@ -84,6 +89,10 @@ def is_globally_enabled() -> bool:
 
 
 async def preload(config: dict[str, Any] | None = None):
+    cfg = normalize_config(config or get_config())
+    if external_speech.is_external(cfg):
+        external_speech.connection(cfg)
+        return
     return await _preload()
 
 
@@ -119,10 +128,15 @@ async def _preload():
 
 
 async def is_downloading() -> bool:
+    if external_speech.is_external(get_config()):
+        return False
     return is_updating_model
 
 
 async def is_downloaded() -> bool:
+    cfg = get_config()
+    if external_speech.is_external(cfg):
+        return not external_speech.configuration_error(cfg) and bool(cfg["external_voice"])
     return _pipeline is not None
 
 
@@ -130,6 +144,8 @@ async def synthesize_sentences(
     sentences: list[str], config: dict[str, Any] | None = None
 ) -> str:
     cfg = normalize_config(config or get_config())
+    if external_speech.is_external(cfg):
+        return await external_speech.synthesize(sentences, cfg, float(cfg["speed"]))
     return await _synthesize_sentences(
         sentences,
         voice=str(cfg["voice"]),

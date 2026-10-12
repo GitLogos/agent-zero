@@ -6,14 +6,46 @@
 <body>
   <div x-data>
     <template x-if="config">
-      <div class="plugin-config-page">
+      <div class="plugin-config-page" x-init="config.backend ??= 'local'; config.request_timeout ??= 120">
         <div class="section-title">Whisper STT</div>
         <div class="section-description">
-          Configure the built-in Whisper speech-to-text provider. Browser microphone
+          Choose local CPU Whisper or an OpenAI-compatible audio service. Browser microphone
           device selection stays local to the Web UI and is managed from the plugin status panel.
         </div>
 
         <div class="field">
+          <div class="field-label">
+            <div class="field-title">Backend</div>
+            <div class="field-description">Local is the default. External sends recorded audio to your configured service; errors never switch back to local.</div>
+          </div>
+          <div class="field-control">
+            <select x-model="config.backend">
+              <option value="local">Local Whisper (CPU)</option>
+              <option value="openai">External OpenAI-compatible API</option>
+            </select>
+          </div>
+        </div>
+
+        <div x-show="config.backend === 'openai'">
+          <div class="field">
+            <div class="field-label"><div class="field-title">Base URL</div><div class="field-description">Include the API prefix, for example https://provider.example/v1. An origin-only URL uses /v1. No query parameters or embedded credentials.</div></div>
+            <div class="field-control"><input type="url" x-model.trim="config.external_base_url" placeholder="http://speech-server:8000/v1" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">API key</div><div class="field-description">Saved in authenticated server-side plugin settings. Leave empty for keyless local services.</div></div>
+            <div class="field-control"><input type="password" x-model="config.external_api_key" autocomplete="off" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">External model</div><div class="field-description">Model identifier accepted by POST /audio/transcriptions. The saved local model size is not sent.</div></div>
+            <div class="field-control"><input type="text" x-model.trim="config.external_model" placeholder="whisper-1" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Request timeout</div><div class="field-description">Total external request time in seconds, including response download.</div></div>
+            <div class="field-control"><input type="number" min="1" x-model.number="config.request_timeout" /></div>
+          </div>
+        </div>
+
+        <div class="field" x-show="config.backend === 'local'">
           <div class="field-label">
             <div class="field-title">Model Size</div>
             <div class="field-description">
@@ -36,7 +68,7 @@
           <div class="field-label">
             <div class="field-title">Language</div>
             <div class="field-description">
-              Language hint forwarded to Whisper. Use <code>auto</code> to let Whisper detect it.
+              Use <code>auto</code> for detection. External services require a two-letter ISO language code, such as <code>en</code>; language names are local-only.
             </div>
           </div>
           <div class="field-control">

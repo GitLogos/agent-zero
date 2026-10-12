@@ -9,6 +9,7 @@
 - `Dockerfile` assembles the runtime candidate.
 - `inventory.py` inventories a container filesystem without starting services; do not name it `profile.py`, which shadows a Python standard-library module when checks run beside it.
 - `smoke.py` exercises real features in a disposable started container.
+- `prepare_cpu_whisper.py` builds the hash-pinned upstream source with isolated `whisper-build-requirements.txt` tooling, then changes dependency metadata only.
 - `README.md` describes supported features and build/measurement commands.
 - `.github/workflows/image-footprint.yml` measures the published amd64 baseline, builds native candidates, and publishes experimental tags only after functional checks.
 
@@ -20,6 +21,8 @@
 - Keep experimental tags separate from stable images until functional checks succeed.
 - Diagnostics and push-triggered runs do not publish; experimental publishing additionally requires explicit manual dispatch opt-in.
 - Preserve Agent Zero Git metadata for versioning, self-update, and rollback.
+- This candidate's approved Triton omission uses `openai-whisper==20250625+a0cpu.1`, preserving every upstream code/asset byte and normal dependency resolution. Triton is optional under `cuda`; no other root speech package is removed, and local CPU speech stays the default.
+- Preserve the CPU wheel/provenance under `/opt/a0-wheels` and installed `a0-cpu-provenance.json`; source hash, recipe hash and code/asset digests make the modification auditable.
 
 ## Work Guidance
 
@@ -35,6 +38,7 @@
 - Diagnose failed Office exports by varying safe mode, VCL selection, and profile isolation independently; diagnostic CLI success does not waive a failing framework helper.
 - Record Docker `Size`, registry compressed layer bytes, and merged filesystem usage.
 - Run `pytest tests/test_image_footprint_checks.py` for inventory hardlinks, ELF section accounting, and check-runner module-shadowing regressions.
+- Check wheel RECORD/payload/default markers and `uv pip check`; native gates require Triton absence and unchanged model choices, plus real local synthesis/transcription and loopback-only external API tests.
 
 ## Child DOX Index
 

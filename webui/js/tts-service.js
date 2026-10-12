@@ -13,6 +13,8 @@ class TtsService extends EventTarget {
     this.userHasInteracted = false;
     this.ttsStream = null;
     this._isSpeaking = false;
+    this.pendingSynthesis = new Set();
+    this.audioCompletion = null;
 
     this.setupUserInteractionHandling();
   }
@@ -149,6 +151,7 @@ class TtsService extends EventTarget {
     }
 
     if (!this.ttsStream || this.ttsStream.id !== id) {
+      this.stop();
       this.ttsStream = {
         id,
         text,
@@ -172,33 +175,42 @@ class TtsService extends EventTarget {
     if (this.ttsStream.running) return;
     this.ttsStream.running = true;
 
-    const terminator = () =>
-      this.ttsStream?.id !== id || this.ttsStream?.stopped;
+    const stream = this.ttsStream;
+    const terminator = () => this.ttsStream !== stream || stream.stopped;
 
-    while (true) {
-      if (terminator()) break;
+    try {
+      while (true) {
+        if (terminator()) break;
 
-      const nextIndex = this.ttsStream.lastChunkIndex + 1;
-      if (nextIndex >= this.ttsStream.chunks.length) {
-        if (this.ttsStream.finished) break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        continue;
+        const nextIndex = stream.lastChunkIndex + 1;
+        if (nextIndex >= stream.chunks.length) {
+          if (stream.finished) break;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          continue;
+        }
+
+        if (nextIndex === stream.chunks.length - 1 && !stream.finished) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          continue;
+        }
+
+        stream.lastChunkIndex = nextIndex;
+        const chunk = stream.chunks[nextIndex];
+        await this.speakChunk(chunk, nextIndex > 0, terminator);
       }
-
-      if (
-        nextIndex === this.ttsStream.chunks.length - 1 &&
-        !this.ttsStream.finished
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        continue;
+    } catch (error) {
+      const cancelled = terminator() || error?.name === "AbortError";
+      stream.stopped = true;
+      if (!cancelled) {
+        shortcuts.frontendNotification({
+          type: "error",
+          message: error instanceof Error ? error.message : "Speech playback failed.",
+          frontendOnly: true,
+        });
       }
-
-      this.ttsStream.lastChunkIndex = nextIndex;
-      const chunk = this.ttsStream.chunks[nextIndex];
-      await this.speakChunk(chunk, nextIndex > 0, terminator);
+    } finally {
+      stream.running = false;
     }
-
-    this.ttsStream.running = false;
   }
 
   async speakChunk(text, waitForPrevious = false, terminator = null) {
@@ -213,6 +225,11 @@ class TtsService extends EventTarget {
           terminator,
         );
       } catch (error) {
+        if (error?.name === "AbortError" || terminator?.()) return;
+        const allowFallback = typeof error?.allowBrowserFallback === "boolean"
+          ? error.allowBrowserFallback
+          : provider.allowBrowserFallback?.() !== false;
+        if (!allowFallback) throw error;
         console.error("TTS provider failed, falling back to browser TTS", error);
       }
     }
@@ -221,9 +238,18 @@ class TtsService extends EventTarget {
   }
 
   async speakWithProvider(provider, text, waitForPrevious = false, terminator = null) {
-    const payload = await provider.synthesize(text, {
-      providerId: this.getActiveProviderId(),
-    });
+    const controller = new AbortController();
+    this.pendingSynthesis.add(controller);
+    let payload;
+    try {
+      payload = await provider.synthesize(text, {
+        providerId: this.getActiveProviderId(),
+        signal: controller.signal,
+      });
+    } finally {
+      this.pendingSynthesis.delete(controller);
+    }
+    if (controller.signal.aborted) return;
 
     while (waitForPrevious && this.isSpeaking()) {
       await sleep(25);
@@ -298,20 +324,24 @@ class TtsService extends EventTarget {
         this.setSpeaking(true);
       };
       audio.onended = () => {
+        this.audioCompletion = null;
         this.setSpeaking(false);
         this.currentAudio = null;
         resolve();
       };
       audio.onerror = (error) => {
+        this.audioCompletion = null;
         this.setSpeaking(false);
         this.currentAudio = null;
         reject(error);
       };
 
       audio.src = `data:${mimeType};base64,${base64Audio}`;
+      this.audioCompletion = resolve;
       this.currentAudio = audio;
 
       audio.play().catch((error) => {
+        this.audioCompletion = null;
         this.setSpeaking(false);
         this.currentAudio = null;
         if (error?.name === "NotAllowedError") {
@@ -325,6 +355,7 @@ class TtsService extends EventTarget {
   }
 
   stop() {
+    for (const controller of this.pendingSynthesis) controller.abort();
     this.stopAudio();
     if (this.ttsStream) {
       this.ttsStream.stopped = true;
@@ -349,6 +380,8 @@ class TtsService extends EventTarget {
     }
 
     this.currentAudio = null;
+    this.audioCompletion?.();
+    this.audioCompletion = null;
     this.setSpeaking(false);
   }
 

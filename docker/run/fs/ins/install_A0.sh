@@ -44,7 +44,15 @@ fi
 # pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining A0 python packages
-uv pip install -r /git/agent-zero/requirements.txt
+additional_requirements=()
+if [ -n "${A0_WHISPER_WHEEL:-}" ]; then
+    if [ ! -f "$A0_WHISPER_WHEEL" ]; then
+        echo "CRITICAL ERROR: Configured Whisper wheel does not exist." >&2
+        exit 1
+    fi
+    additional_requirements+=("$A0_WHISPER_WHEEL")
+fi
+uv pip install -r /git/agent-zero/requirements.txt "${additional_requirements[@]}"
 
 # install playwright
 bash /ins/install_playwright.sh "$@"

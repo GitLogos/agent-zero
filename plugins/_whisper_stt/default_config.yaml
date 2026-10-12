@@ -1,3 +1,8 @@
+backend: local
+external_base_url: ""
+external_api_key: ""
+external_model: ""
+request_timeout: 120
 model_size: base
 language: en
 message_mode: send

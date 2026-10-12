@@ -1,6 +1,7 @@
 import importlib.metadata
 
 from helpers.api import ApiHandler, Request, Response
+from helpers import external_speech
 from plugins._kokoro_tts.helpers import migration, runtime
 
 
@@ -15,13 +16,18 @@ class Status(ApiHandler):
         except Exception as e:
             package_error = str(e)
 
+        config = runtime.get_config()
+        error = external_speech.configuration_error(config)
+        if not error and config["backend"] == "openai" and not config["external_voice"]:
+            error = "External TTS voice is required."
         return {
             "plugin": "_kokoro_tts",
             "enabled": runtime.is_globally_enabled(),
-            "config": runtime.get_config(),
+            "config": external_speech.public_config(config),
+            "configuration_error": error,
             "model": {
-                "ready": await runtime.is_downloaded(),
-                "loading": await runtime.is_downloading(),
+                "ready": False if error else await runtime.is_downloaded(),
+                "loading": False if error else await runtime.is_downloading(),
             },
             "package": {
                 "version": package_version,

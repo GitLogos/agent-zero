@@ -17,7 +17,9 @@ def save_plugin_config(default=None, settings=None, **kwargs):
 
     previous_model = str(previous.get("model_size") or "")
     next_model = str(normalized.get("model_size") or "")
-    if next_model and next_model != previous_model:
-        DeferredTask().start_task(runtime.preload, next_model)
+    if normalized["backend"] == "local" and next_model and (
+        next_model != previous_model or previous["backend"] != "local"
+    ):
+        DeferredTask().start_task(runtime._preload, next_model)
 
     return normalized

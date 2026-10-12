@@ -10,6 +10,7 @@ from typing import Any
 import whisper
 
 from helpers import files, plugins
+from helpers import external_speech
 from helpers.notification import (
     NotificationManager,
     NotificationPriority,
@@ -24,6 +25,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 PLUGIN_NAME = "_whisper_stt"
 DEFAULT_CONFIG = {
+    **external_speech.DEFAULT_CONFIG,
     "model_size": "base",
     "language": "en",
     "message_mode": "send",
@@ -43,6 +45,7 @@ def normalize_config(config: dict[str, Any] | None) -> dict[str, Any]:
     normalized = dict(DEFAULT_CONFIG)
     if not isinstance(config, dict):
         return normalized
+    normalized.update(external_speech.normalize_config(config))
 
     model_size = str(config.get("model_size", normalized["model_size"]) or "").strip()
     if model_size in VALID_MODEL_SIZES:
@@ -94,6 +97,9 @@ def get_config() -> dict[str, Any]:
 
 
 def get_loaded_model_name() -> str:
+    config = get_config()
+    if external_speech.is_external(config):
+        return ""
     return _model_name
 
 
@@ -105,6 +111,9 @@ def is_globally_enabled() -> bool:
 
 async def preload(model_name: str | None = None):
     cfg = get_config()
+    if external_speech.is_external(cfg):
+        external_speech.connection(cfg)
+        return
     resolved_model = str(model_name or cfg["model_size"])
     return await _preload(resolved_model)
 
@@ -143,10 +152,15 @@ async def _preload(model_name: str):
 
 
 async def is_downloading() -> bool:
+    if external_speech.is_external(get_config()):
+        return False
     return is_updating_model
 
 
 async def is_downloaded() -> bool:
+    cfg = get_config()
+    if external_speech.is_external(cfg):
+        return not external_speech.configuration_error(cfg)
     return _model is not None
 
 
@@ -154,6 +168,10 @@ async def transcribe(
     audio_bytes_b64: str, config: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     cfg = normalize_config(config or get_config())
+    if external_speech.is_external(cfg):
+        return await external_speech.transcribe(
+            audio_bytes_b64, cfg, _resolve_language(str(cfg["language"]))
+        )
     return await _transcribe(
         str(cfg["model_size"]),
         audio_bytes_b64,

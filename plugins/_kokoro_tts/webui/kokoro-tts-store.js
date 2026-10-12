@@ -12,6 +12,9 @@ const model = {
   error: "",
   enabled: false,
   config: {
+    backend: "local",
+    external_model: "",
+    external_voice: "",
     voice: "",
     voice_weights: {},
     speed: 1.1,
@@ -41,6 +44,9 @@ const model = {
       this.statusLoaded = true;
       this.enabled = !!status?.enabled;
       this.config = {
+        backend: status?.config?.backend || "local",
+        external_model: status?.config?.external_model || "",
+        external_voice: status?.config?.external_voice || "",
         voice: status?.config?.voice || "",
         voice_weights: status?.config?.voice_weights || {},
         speed: Number(status?.config?.speed || 1.1),
@@ -48,6 +54,7 @@ const model = {
       this.modelReady = !!status?.model?.ready;
       this.modelLoading = !!status?.model?.loading;
       this.packageVersion = status?.package?.version || "";
+      this.error = status?.configuration_error || "";
 
       if (this.enabled) {
         this.registerProvider();
@@ -56,7 +63,7 @@ const model = {
       }
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
-      this.unregisterProvider();
+      if (this.config.backend === "local") this.unregisterProvider();
       if (!suppressError) {
         void toastFrontendError(this.error, "Kokoro TTS");
       }
@@ -69,12 +76,15 @@ const model = {
     if (this.providerCleanup || !this.enabled) return;
 
     this.providerCleanup = ttsService.registerProvider(PLUGIN_NAME, {
-      synthesize: async (text) => {
+      allowBrowserFallback: () => this.config.backend === "local",
+      synthesize: async (text, { signal } = {}) => {
         const result = await callJsonApi(`/plugins/${PLUGIN_NAME}/synthesize`, {
           text,
-        });
+        }, { signal });
         if (!result?.success) {
-          throw new Error(result?.error || "Kokoro TTS synthesis failed.");
+          const error = new Error(result?.error || "Kokoro TTS synthesis failed.");
+          error.allowBrowserFallback = result?.backend === "local";
+          throw error;
         }
 
         return {
@@ -93,6 +103,8 @@ const model = {
 
   get statusText() {
     if (!this.enabled) return "Disabled";
+    if (this.error) return "Configuration error";
+    if (this.config.backend === "openai") return this.modelReady ? "Configured" : "Not configured";
     if (this.modelLoading) return "Loading";
     if (this.modelReady) return "Ready";
     return "Idle";
@@ -106,6 +118,7 @@ const model = {
   },
 
   get voiceSummary() {
+    if (this.config.backend === "openai") return this.config.external_voice || "";
     const entries = Object.entries(this.config.voice_weights || {});
     if (!entries.length) return this.config.voice || "";
 
@@ -116,9 +129,14 @@ const model = {
       .join(" · ");
   },
 
+  get backendSummary() {
+    return this.config.backend === "local" ? "Local Kokoro" : "External OpenAI-compatible";
+  },
+
   async openConfig() {
     const { store } = await import("/components/plugins/plugin-settings-store.js");
     await store.openConfig(PLUGIN_NAME);
+    await this.refreshStatus();
   },
 
   openPanel() {

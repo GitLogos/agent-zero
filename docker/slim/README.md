@@ -7,6 +7,23 @@ is inherited by the final image. It retains both Python runtimes,
 native compilation tools, installed libraries, Git history, and preloaded models.
 Installation caches and overwritten/deleted lower-layer files are not exported.
 
+The approved speech packaging variant additionally omits mandatory Triton on the
+already CPU-only framework runtime. It retains local Whisper/Kokoro defaults and
+adds opt-in OpenAI-compatible external audio services. External Ollama/vLLM and
+other GPU-backed provider connections are unchanged; no local CUDA runtime is
+installed. No other bundled component is removed.
+
+`prepare_cpu_whisper.py` verifies the immutable upstream Whisper 20250625 source
+SHA-256, builds in a temporary isolated environment, and produces
+`20250625+a0cpu.1`. Only dependency metadata changes: Triton moves to an optional
+`cuda` extra. All upstream code/model assets and CLI entry points remain; the
+local version satisfies the existing `==20250625` requirement. Runtime
+installation uses the normal resolver and must pass `uv pip check`, not broad
+dependency skipping. The retained wheel under `/opt/a0-wheels` and installed
+`a0-cpu-provenance.json` record source/recipe/payload digests and valid wheel
+RECORD hashes. A separately installed local CUDA runtime would also need that
+optional extra; this image's local speech is CPU, as before.
+
 The pinned vendor digest matches the measured baseline's base layers. Its system
 Python and libraries are compatible with the pinned Xpra/UNO desktop stack;
 current rolling system Python 3.14 and newer version-coupled GLib packages are
@@ -69,6 +86,12 @@ interactive Chromium, a real live LibreOffice window, search/SSH/supervisor, and
 speech synthesis followed by transcription. Speech checks use the existing
 model-download behavior in the test container; downloaded test assets are not
 added to the image.
+Additional gates check Triton absence, CPU-wheel metadata/provenance, preserved
+Whisper model choices, and actual authenticated/CSRF-protected STT/TTS routes
+against a loopback-only fake OpenAI-compatible service. Synthetic audio/text and
+ephemeral test keys are used, never user data or real providers. Pytest is
+installed only into the disposable test container when missing, after image
+measurement, and is not bundled into the published image.
 
 Keep `inventory.py` named distinctly from Python's standard-library `profile`
 module: placing a `profile.py` beside the smoke runner breaks imports that use

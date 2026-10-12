@@ -3,9 +3,10 @@
  * Data is automatically serialized
  * @param {string} endpoint - The API endpoint to call
  * @param {any} data - The data to send to the API
+ * @param {{signal?: AbortSignal}} [options] - Optional cancellation signal
  * @returns {Promise<any>} The JSON response from the API
  */
-export async function callJsonApi(endpoint, data) {
+export async function callJsonApi(endpoint, data, { signal } = {}) {
   const apiUrl = _normalizeApiUrl(endpoint);
 
   /** @type {{ endpoint: string, data: any, response: Response | null, result: any, error: Error | null }} */
@@ -29,6 +30,7 @@ export async function callJsonApi(endpoint, data) {
     },
     credentials: "same-origin",
     body: JSON.stringify(ctx.data),
+    signal,
   });
   ctx.response = response;
 

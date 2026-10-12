@@ -37,6 +37,8 @@
 - Create dynamic Material Symbols with `document.createElement("x-icon")` and assign `.name`; generated HTML uses an empty `<x-icon name="..."></x-icon>`. Shared helpers that can receive third-party plugin DOM must continue accepting legacy `.material-symbols-outlined` and `.material-icons-outlined` spans.
 - Route JSON and fetch calls through `api.js` unless a caller has a specific nonstandard transport contract.
 - `callJsonApi()` is for JSON request/response flows and must preserve CSRF/auth behavior.
+- `callJsonApi()` accepts optional `{ signal }` without bypassing extension/CSRF/auth hooks.
+- `tts-service.js` cancels pending synthesis on stop and settles paused audio waits. Providers can opt out of browser fallback through `allowBrowserFallback()`; a synthesis error's explicit `allowBrowserFallback: false` is authoritative even with stale status. Failed streams stop with a notification and reset running state.
 - `fetchApi()` must continue adding CSRF headers, retrying 403 CSRF refresh paths, and redirecting to `/login` when required.
 - `createStore(name, model)` must continue working before and after Alpine boots by proxying to the raw model first and Alpine store later.
 - `saveState()` and `loadState()` must not persist functions and should support include/exclude filtering for transient fields.
