@@ -24,6 +24,7 @@
 - `workflows/image-footprint.yml` records GHCR baseline/candidate footprints, builds native amd64/arm64 profiles at the exact checkout SHA, and publishes only experimental commit/profile tags after real retained-feature and omission checks; stable tags are unchanged.
 - Footprint builds use only the neutral `image-rebuild` ref and enforce CPU-Whisper provenance/Triton absence, targeted speech tests, and local/external speech feature gates before experimental publication.
 - Six manual boolean inclusion inputs default true; event-aware expressions preserve explicit false, while pushes use all-on. `docker/slim/image_profile.py` prevents same-commit profile-tag collisions. Publishing still requires manual opt-in.
+- Startup, targeted regressions and native feature checks have independent outcomes: after successful startup, feature checks still run on regression-test failure for diagnostics. Any failed gate prevents publication.
 - Workflow dispatch UI registration requires the workflow on the default branch; feature-branch verification uses explicit ref-specific API dispatch, not an unapproved merge.
 
 ## Work Guidance

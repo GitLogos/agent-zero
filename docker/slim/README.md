@@ -74,6 +74,8 @@ Baseline memory/Office checks distinguish existing failures from candidate
 regressions; they never waive a failing candidate publication gate.
 Office export, document parsing, OCR, and ffmpeg run independently, so an import
 or conversion failure cannot prevent the other features from being exercised.
+After successful startup, native feature checks also run independently of targeted
+pytest results, preserving diagnostics; any failed gate still blocks publication.
 
 Compare **uncompressed Docker image `Size`**, not compressed registry transfer
 size. Merged `du` allocation excludes deleted lower-layer bytes and includes

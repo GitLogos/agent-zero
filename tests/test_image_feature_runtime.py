@@ -77,7 +77,11 @@ def test_headless_office_cannot_advertise_a_live_desktop(controlled_features):
     assert status["office_available"]
     handler = object.__new__(OfficeSession)
     result = asyncio.run(handler._open_document(
-        {"extension": "odt", "path": "/tmp/fixture.odt", "file_id": "fixture"}, {}, None,
+        {
+            "extension": "odt", "path": "/tmp/fixture.odt", "file_id": "fixture",
+            "basename": "fixture.odt", "size": 0, "last_modified": 0,
+            "version": 0, "sha256": "fixture",
+        }, {}, None,
     ))
     assert not result["ok"] and "not included" in result["error"]
 

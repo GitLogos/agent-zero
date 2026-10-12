@@ -115,6 +115,11 @@ def test_workflow_boolean_defaults_and_real_build_args():
         assert "github.event_name != 'workflow_dispatch' || inputs." + name in env
         assert "|| true" not in env
         assert "A0_INCLUDE_" + feature.upper() in build["with"]["build-args"]
+    publish = next(step for step in candidate["steps"] if step.get("run") == 'docker push "$IMAGE"')
+    assert "success()" in publish["if"] and "inputs.publish_experimental" in publish["if"]
+    assert "success()" in workflow["jobs"]["publish-index"]["if"]
+    smoke = next(step for step in candidate["steps"] if step.get("name") == "Run real retained-feature and omission checks")
+    assert smoke["if"] == "always() && steps.startup.outcome == 'success'"
 
 
 def test_feature_bootstrap_uses_only_standard_library():

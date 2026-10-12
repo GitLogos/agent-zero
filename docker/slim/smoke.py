@@ -72,7 +72,10 @@ def runtimes():
                 assert hashlib.sha256(distribution.locate_file(name).read_bytes()).hexdigest() == digest
             assert {"tiny", "base", "small", "medium", "large", "turbo"} <= set(whisper.available_models())
         run("uv", "pip", "check", "--python", sys.executable)
-    print("Python 3.12 framework, Python 3.13 tasks, UNO, Node/npm and native compilation work.")
+    print(
+        "Python 3.12 framework, Python 3.13 tasks, Node/npm and native compilation work.",
+        "UNO works." if baseline or image_features.available("office") else "UNO excluded by build.",
+    )
 
 
 async def memory():
@@ -458,7 +461,10 @@ async def speech():
     for feature, runtime in (("whisper", stt), ("kokoro", tts)):
         if not features[feature]:
             assert "not included" in runtime.configuration_error(runtime.normalize_config({"backend": "local"}))
-    print("Included local speech engines execute; excluded local backends report explicit configuration errors.")
+    print(
+        "Local speech engines executed:", [name for name in ("whisper", "kokoro") if features[name]],
+        "; excluded local selections report explicit configuration errors.",
+    )
 
 
 def external_speech_api():
