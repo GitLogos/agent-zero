@@ -46,8 +46,9 @@ Build locally:
 
 ```bash
 docker build -f docker/slim/Dockerfile \
-  --build-arg BRANCH=main \
+  --build-arg BRANCH=image-rebuild \
   --build-arg A0_REPOSITORY_URL=https://github.com/GitLogos/agent-zero.git \
+  --build-arg A0_BUILD_COMMIT="$(git rev-parse HEAD)" \
   -t ghcr.io/gitlogos/agent-zero-slim:local .
 ```
 
@@ -103,3 +104,28 @@ checks as `experimental-<full-commit-sha>-<architecture>` tags. The multi-archit
 `experimental-<full-commit-sha>` tag requires both architectures to pass. This
 workflow never replaces `latest` or the existing stable branch tag, and does not
 claim a 3 GB reduction unless the measured amd64 difference reaches that value.
+
+### Verified speech-enabled candidate
+
+[Native validation run](https://github.com/GitLogos/agent-zero/actions/runs/38264132149)
+for source `7fcc30f4a411e17db9c9a165e8fb9de4d344e79a` passed 76 targeted tests
+and all 12 feature groups on each architecture, including real local speech and
+synthetic loopback external speech APIs. The published multi-architecture tag is
+`ghcr.io/gitlogos/agent-zero-slim:experimental-7fcc30f4a411e17db9c9a165e8fb9de4d344e79a`.
+Its registry index digest is
+`sha256:65dc6ae419e3ff66ab95daa31ef5396747214e9a7d8d082d23b144b95d52c454`.
+Stable tags remain unchanged.
+
+| Measurement | Uncompressed bytes |
+| --- | ---: |
+| Published amd64 baseline (`sha-67512fa`) | 7,940,191,238 |
+| Full-functionality amd64 candidate | 6,716,780,224 |
+| Additional amd64 saving | 1,223,411,014 |
+| Remaining saving needed for the additional 3 GB goal | 1,776,588,986 |
+| Full-functionality arm64 candidate | 6,406,718,409 |
+
+These measurements include restored Desktop/live Office/interactive Browser
+dependencies. **The additional 3 GB goal is not met.** The user-reported original
+size of about 8.5 GB is not an independently measured baseline, and there is no
+same-architecture baseline measurement for arm64. No further component removals
+were applied to close the gap.
