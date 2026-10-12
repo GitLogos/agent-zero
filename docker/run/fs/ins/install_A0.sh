@@ -10,6 +10,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 BRANCH="$1"
+REPOSITORY_URL="${A0_REPOSITORY_URL:-https://github.com/agent0ai/agent-zero}"
 
 if [ "$BRANCH" = "local" ]; then
     # For local branch, use the files
@@ -19,9 +20,9 @@ if [ "$BRANCH" = "local" ]; then
     # find "/git/agent-zero" -type f | sort
 else
     # For other branches, clone from GitHub
-    echo "Cloning repository from branch $BRANCH..."
-    git clone -b "$BRANCH" "https://github.com/agent0ai/agent-zero" "/git/agent-zero" || {
-        echo "CRITICAL ERROR: Failed to clone repository. Branch: $BRANCH"
+    echo "Cloning repository from $REPOSITORY_URL branch $BRANCH..."
+    git clone -b "$BRANCH" "$REPOSITORY_URL" "/git/agent-zero" || {
+        echo "CRITICAL ERROR: Failed to clone repository. Repository: $REPOSITORY_URL Branch: $BRANCH"
         exit 1
     }
 fi
