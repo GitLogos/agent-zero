@@ -30,7 +30,7 @@ Python and libraries are compatible with the pinned Xpra/UNO desktop stack;
 current rolling system Python 3.14 and newer version-coupled GLib packages are
 not. Updating this digest requires rebuilding and running the full feature gate.
 
-Included:
+Included in the default all-enabled profile:
 
 - Web UI, API, supervisor, OpenSSH, ffmpeg, Node.js/npm, SearXNG,
   Tesseract/Poppler, local embeddings/FAISS memory, speech libraries and document parsers.
@@ -164,27 +164,46 @@ run included features, loopback external speech/search and exclusion checks
 after startup/hooks/dependency reconciliation. Unavailable capabilities are not
 presented as successfully exercised features.
 
-### Verified speech-enabled candidate
+### Verified six-feature profiles
 
-[Native validation run](https://github.com/GitLogos/agent-zero/actions/runs/38264132149)
-for source `7fcc30f4a411e17db9c9a165e8fb9de4d344e79a` passed 76 targeted tests
-and all 12 feature groups on each architecture, including real local speech and
-synthetic loopback external speech APIs. The published multi-architecture tag is
-`ghcr.io/gitlogos/agent-zero-slim:experimental-7fcc30f4a411e17db9c9a165e8fb9de4d344e79a`.
-Its registry index digest is
-`sha256:65dc6ae419e3ff66ab95daa31ef5396747214e9a7d8d082d23b144b95d52c454`.
-Stable tags remain unchanged.
+Source `cd56028aaf74b9a83d590440a509349746215a02` passed **163 targeted
+regressions per profile per architecture**, real startup, retained-feature
+checks and omission checks on native amd64/arm64 runners. All-on exercises local
+speech, Desktop, live Office and interactive Browser. Mixed profiles verify
+Desktop without Office/Chromium and headless Office/interactive Browser without
+Desktop. All-off speech checks verify explicit local-unavailability errors and
+working external APIs, not local speech execution. No real provider uploads were
+used.
 
-| Measurement | Uncompressed bytes |
-| --- | ---: |
-| Published amd64 baseline (`sha-67512fa`) | 7,940,191,238 |
-| Full-functionality amd64 candidate | 6,716,780,224 |
-| Additional amd64 saving | 1,223,411,014 |
-| Remaining saving needed for the additional 3 GB goal | 1,776,588,986 |
-| Full-functionality arm64 candidate | 6,406,718,409 |
+All sizes below are **bytes**. Compressed columns are registry layer sums, not
+the basis for savings. Published configuration digests match the measured images;
+source/capability labels match startup status on both architectures.
 
-These measurements include restored Desktop/live Office/interactive Browser
-dependencies. **The additional 3 GB goal is not met.** The user-reported original
-size of about 8.5 GB is not an independently measured baseline, and there is no
-same-architecture baseline measurement for arm64. No further component removals
-were applied to close the gap.
+| Profile / validation run | amd64 uncompressed | amd64 compressed | arm64 uncompressed | arm64 compressed |
+| --- | ---: | ---: | ---: | ---: |
+| [All six included](https://github.com/GitLogos/agent-zero/actions/runs/38291129656) | 6,712,844,974 | 2,544,765,679 | 6,402,840,130 | 2,382,743,942 |
+| [All six excluded](https://github.com/GitLogos/agent-zero/actions/runs/38291139523) | 4,961,358,766 | 1,830,919,007 | 4,422,405,149 | 1,661,112,033 |
+| [Desktop + Whisper only](https://github.com/GitLogos/agent-zero/actions/runs/38291148749) | 5,296,736,669 | 1,943,007,168 | 4,760,145,512 | 1,771,498,763 |
+| [Office + Kokoro + Chromium + SearXNG](https://github.com/GitLogos/agent-zero/actions/runs/38291157741) | 6,417,190,747 | 2,448,790,114 | 6,104,808,920 | 2,288,334,805 |
+
+Multi-architecture tags, in the same profile order:
+
+```text
+ghcr.io/gitlogos/agent-zero-slim:experimental-cd56028aaf74b9a83d590440a509349746215a02
+ghcr.io/gitlogos/agent-zero-slim:experimental-cd56028aaf74b9a83d590440a509349746215a02-d0-o0-w0-k0-c0-s0
+ghcr.io/gitlogos/agent-zero-slim:experimental-cd56028aaf74b9a83d590440a509349746215a02-d1-o0-w1-k0-c0-s0
+ghcr.io/gitlogos/agent-zero-slim:experimental-cd56028aaf74b9a83d590440a509349746215a02-d0-o1-w0-k1-c1-s1
+```
+
+The all-off index is
+`sha256:4018382cceb50912903e0d3db841d18fb320d43c64729ea18459619f53fb27c0`.
+The stable `slim-image-ghcr` index remains
+`sha256:e78fdbe83b02f78d6cd4f1681df72b6712d2c79354a751dff6898133586d58df`;
+no stable promotion or default-branch merge was performed.
+
+Against the measured **7,940,191,238-byte amd64 baseline**, all-on saves
+**1,227,346,264 bytes** and all-off saves **2,978,832,472 bytes**.
+**The additional decimal 3 GB goal is still short by 21,167,528 bytes**, even
+with all six approved exclusions. No other component removal or binary stripping
+was applied to close the gap. The user-reported original size of about 8.5 GB is
+not independently measured; there is no same-architecture arm64 baseline.
