@@ -1,0 +1,184 @@
+name: Measure And Validate Full Image
+
+on:
+  push:
+    branches:
+      - image-rebuild
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: ghcr.io/gitlogos/agent-zero-slim:sha-67512fa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Measure published amd64 baseline
+        run: |
+          set -euo pipefail
+          mkdir -p measurements
+          docker pull --platform linux/amd64 "$IMAGE"
+          docker image inspect "$IMAGE" > measurements/baseline-image.json
+          docker history --no-trunc --format '{{json .}}' "$IMAGE" > measurements/baseline-history.jsonl
+          docker manifest inspect "$IMAGE" > measurements/baseline-index.json
+          digest="$(python3 -c 'import json; d=json.load(open("measurements/baseline-index.json")); print(next(m["digest"] for m in d["manifests"] if m["platform"].get("architecture")=="amd64" and m["platform"].get("os")=="linux"))')"
+          docker manifest inspect "${IMAGE%:*}@$digest" > measurements/baseline-manifest.json
+          docker run --rm --platform linux/amd64 \
+            --entrypoint /opt/venv-a0/bin/python \
+            -v "$PWD/docker/slim/profile.py:/profile.py:ro" \
+            "$IMAGE" /profile.py > measurements/baseline-filesystem.json
+          python3 - <<'PY'
+          import json
+          image = json.load(open("measurements/baseline-image.json"))[0]
+          fs = json.load(open("measurements/baseline-filesystem.json"))
+          manifest = json.load(open("measurements/baseline-manifest.json"))
+          print("Uncompressed image bytes:", image["Size"])
+          print("Compressed layer bytes:", sum(layer["size"] for layer in manifest["layers"]))
+          print("Merged filesystem allocated bytes:", fs["merged_filesystem_allocated_bytes"])
+          print("Largest paths:", json.dumps(fs["paths"], indent=2))
+          for site, packages in fs["python_distributions"].items():
+              print(site)
+              for package in packages[:15]:
+                  print(package["name"], package["version"], package["logical_bytes"])
+          print("UV exclusive/shared cache bytes:", json.dumps(fs["uv_cache"], indent=2))
+          print("Large ELF section inventory:", json.dumps(fs["large_elf_files"], indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-baseline-amd64
+          path: measurements
+          if-no-files-found: error
+
+  candidate:
+    needs: baseline
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      IMAGE: ghcr.io/gitlogos/agent-zero-slim:experimental-${{ github.sha }}-${{ matrix.architecture }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free ephemeral runner build space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /opt/az /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/.ghcup /usr/local/lib/android /usr/local/share/boost /usr/share/dotnet
+          df -h /
+          bash -n docker/run/fs/ins/install_A0.sh
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/slim/Dockerfile
+          platforms: linux/${{ matrix.architecture }}
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            BRANCH=${{ github.ref_name }}
+            A0_REPOSITORY_URL=https://github.com/${{ github.repository }}.git
+            A0_BUILD_COMMIT=${{ github.sha }}
+      - name: Measure candidate before starting services
+        run: |
+          set -euo pipefail
+          mkdir -p measurements
+          docker image inspect "$IMAGE" > measurements/candidate-image.json
+          docker history --no-trunc --format '{{json .}}' "$IMAGE" > measurements/candidate-history.jsonl
+          docker run --rm --entrypoint /opt/venv-a0/bin/python \
+            -v "$PWD/docker/slim/profile.py:/profile.py:ro" \
+            "$IMAGE" /profile.py > measurements/candidate-filesystem.json
+          docker run --rm --entrypoint git "$IMAGE" -C /git/agent-zero rev-parse HEAD | grep -Fx "$GITHUB_SHA"
+      - uses: actions/download-artifact@v4
+        with:
+          name: image-baseline-amd64
+          path: measurements/baseline
+      - name: Compare measured sizes
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          baseline = json.load(open("measurements/baseline/baseline-image.json"))[0]["Size"]
+          candidate = json.load(open("measurements/candidate-image.json"))[0]["Size"]
+          result = {
+              "architecture": os.environ["ARCHITECTURE"],
+              "candidate_uncompressed_bytes": candidate,
+              "baseline_amd64_uncompressed_bytes": baseline,
+              "amd64_saved_bytes": baseline - candidate if os.environ["ARCHITECTURE"] == "amd64" else None,
+              "amd64_three_gb_target_met": baseline - candidate >= 3_000_000_000 if os.environ["ARCHITECTURE"] == "amd64" else None,
+          }
+          Path("measurements/comparison.json").write_text(json.dumps(result, indent=2))
+          print(json.dumps(result, indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("### Measured image footprint\n\n```json\n" + json.dumps(result, indent=2) + "\n```\n")
+          PY
+      - name: Run real startup and feature checks
+        run: |
+          set -euo pipefail
+          docker run -d --name image-smoke -p 127.0.0.1::80 \
+            -v "$PWD/docker/slim:/checks:ro" "$IMAGE"
+          port="$(docker port image-smoke 80/tcp | awk -F: '{print $NF}')"
+          curl --fail --silent --show-error --retry 60 --retry-delay 5 \
+            --retry-all-errors "http://127.0.0.1:$port/api/health" > measurements/health.json
+          timeout 1500 docker exec -e PYTHONPATH=/a0 -w /a0 image-smoke \
+            /opt/venv-a0/bin/python /checks/smoke.py --dockerized=true \
+            2>&1 | tee measurements/smoke.log
+      - name: Preserve runtime diagnostics
+        if: always()
+        run: |
+          mkdir -p measurements
+          if docker inspect image-smoke >/dev/null 2>&1; then
+            docker logs image-smoke > measurements/startup.log 2>&1
+            docker cp image-smoke:/tmp/image-smoke-results.json measurements/smoke-results.json || \
+              echo "Smoke runner did not produce results; inspect startup and smoke logs." >&2
+            docker rm -f image-smoke
+          fi
+      - name: Publish only the functionally checked experimental image
+        run: docker push "$IMAGE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-candidate-${{ matrix.architecture }}
+          path: measurements
+          if-no-files-found: warn
+
+  publish-index:
+    needs: candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish checked multi-architecture experimental tag
+        env:
+          IMAGE: ghcr.io/gitlogos/agent-zero-slim:experimental-${{ github.sha }}
+        run: |
+          docker buildx imagetools create --tag "$IMAGE" "$IMAGE-amd64" "$IMAGE-arm64"
+          docker buildx imagetools inspect "$IMAGE"

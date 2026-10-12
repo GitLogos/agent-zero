@@ -21,6 +21,7 @@
 - Release notes compare against the previous published GitHub release tag and fall back to `No release notes.` when no meaningful summary is generated.
 - Keep workflow secrets in GitHub Actions secrets or environment variables. Do not commit credentials, tokens, or generated release bodies containing private data.
 - Workflow scripts must fail loudly with actionable messages when required environment variables or git refs are missing.
+- `workflows/image-footprint.yml` records GHCR baseline/candidate footprints, builds native amd64/arm64 full-functionality candidates at the exact checkout SHA, and publishes only experimental commit tags after real feature checks; stable tags are unchanged.
 
 ## Work Guidance
 

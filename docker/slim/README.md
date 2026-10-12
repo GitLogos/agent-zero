@@ -1,15 +1,22 @@
 # Agent Zero slim image
 
-This image keeps the Agent Zero web app and core runtime features while omitting the bundled Xpra/Xfce Linux desktop stack.
+This experimental image rebuilds the owned Kali base and exports its cleaned
+merged filesystem into a fresh final stage. It retains both Python runtimes,
+native compilation tools, installed libraries, Git history, and preloaded models.
+Installation caches and overwritten/deleted lower-layer files are not exported.
 
 Included:
 
-- Web UI, API, supervisor, OpenSSH, ffmpeg, Node.js/npm, SearXNG, Tesseract/Poppler, Python runtimes, browser automation, and LibreOffice.
-- LibreOffice headless document creation/conversion for Writer, Calc, and Impress artifacts.
+- Web UI, API, supervisor, OpenSSH, ffmpeg, Node.js/npm, SearXNG,
+  Tesseract/Poppler, local embeddings/FAISS memory, speech libraries and document parsers.
+- Python 3.12 framework (`/opt/venv-a0`) and Python 3.13 execution (`/opt/venv`).
+- Patchright Chromium automation and interactive browser viewer.
+- Xpra/Xfce Desktop and LibreOffice Writer, Calc and Impress, including live
+  document windows and headless creation/export.
 
-Not included:
-
-- Xpra/Xfce desktop packages and related desktop UI tools. The `_desktop` plugin may report the Desktop surface as unavailable in this image.
+The earlier `sha-67512fa` image omitted Xpra/Xfce. That omission also removed the
+primary interactive Browser viewer, not just the Desktop panel. Full-functionality
+candidates restore this stack; their measurements include its cost.
 
 Build locally:
 
@@ -25,3 +32,35 @@ Run:
 ```bash
 docker run -p 5080:80 -v a0_usr:/a0/usr ghcr.io/gitlogos/agent-zero-slim:latest
 ```
+
+For an exact source build, pass `--build-arg A0_BUILD_COMMIT=<full-commit-sha>`
+with a branch that contains that commit. The image retains that named Git branch
+and history for versioning, self-update and rollback. Installation-time cache
+controls do not change the user's runtime cache behavior.
+
+## Measurements and functional checks
+
+`image-footprint.yml` profiles the immutable published `sha-67512fa` baseline and
+builds native amd64/arm64 candidates. Artifacts contain Docker image inspection,
+layer history, filesystem allocation, APT installed-size metadata, Python package
+inventories, UV hardlink accounting, ELF section sizes, and smoke/startup logs.
+
+Compare **uncompressed Docker image `Size`**, not compressed registry transfer
+size. Merged `du` allocation excludes deleted lower-layer bytes and includes
+filesystem block overhead; separate nested/hardlinked directory totals overlap.
+UV's apparent cache size is not its exclusive reclaimable size. ELF section
+inventories are measurements only; binaries are not stripped.
+
+`smoke.py` runs in a disposable started container with the framework runtime. It
+checks both Python runtimes, native compilation, Node/npm, offline local memory,
+ODF-to-OOXML/PDF exports, parsing/OCR, ffmpeg, normal plugin hooks, headless and
+interactive Chromium, a real live LibreOffice window, search/SSH/supervisor, and
+speech synthesis followed by transcription. Speech checks use the existing
+model-download behavior in the test container; downloaded test assets are not
+added to the image.
+
+Only candidates passing these checks publish
+`experimental-<full-commit-sha>-<architecture>` tags. The multi-architecture
+`experimental-<full-commit-sha>` tag requires both architectures to pass. This
+workflow never replaces `latest` or the existing stable branch tag, and does not
+claim a 3 GB reduction unless the measured amd64 difference reaches that value.

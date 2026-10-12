@@ -25,6 +25,14 @@ else
         echo "CRITICAL ERROR: Failed to clone repository. Repository: $REPOSITORY_URL Branch: $BRANCH"
         exit 1
     }
+    if [ -n "${A0_BUILD_COMMIT:-}" ]; then
+        if ! [[ "$A0_BUILD_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "CRITICAL ERROR: A0_BUILD_COMMIT must be a full commit SHA." >&2
+            exit 1
+        fi
+        # Retain a named branch for version reporting and self-update.
+        git -C /git/agent-zero checkout -B "$BRANCH" "$A0_BUILD_COMMIT"
+    fi
 fi
 
 . "/ins/setup_venv.sh" "$@"

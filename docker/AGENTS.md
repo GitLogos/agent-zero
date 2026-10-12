@@ -38,3 +38,4 @@ Direct child DOX files:
 | --- | --- |
 | [base/AGENTS.md](base/AGENTS.md) | Base image Dockerfile, copied filesystem, and installation scripts. |
 | [run/AGENTS.md](run/AGENTS.md) | Runnable image Dockerfile, compose example, entrypoints, and install scripts. |
+| [slim/AGENTS.md](slim/AGENTS.md) | Experimental GHCR packaging, footprint measurement, and full-functionality verification. |
