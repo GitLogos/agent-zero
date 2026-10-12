@@ -139,14 +139,17 @@ def convert_document(path: str | Path, target_format: str, output_dir: str | Pat
     created = [item for item in destination_dir.iterdir() if item.name not in before]
     if created:
         return {"ok": True, "path": str(created[0])}
-    return {"ok": False, "error": "LibreOffice completed without producing an output file."}
+    details = (result.stderr or result.stdout or "").strip()
+    error = "LibreOffice completed without producing an output file."
+    if details:
+        error += f" {details}"
+    return {"ok": False, "error": error}
 
 
 def _run_soffice(soffice: str, args: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "HOME": os.environ.get("HOME") or "/tmp",
-        "SAL_USE_VCLPLUGIN": os.environ.get("SAL_USE_VCLPLUGIN") or "gen",
     }
     return subprocess.run(
         [soffice, *args],

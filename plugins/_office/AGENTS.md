@@ -18,6 +18,7 @@
 - Atomic writes preserve the existing file mode and owner/group; Rename and Save As inherit them from the source. Temporary files and new files from atomic writes start private (0600). Metadata failures must leave the original untouched.
 - Version backups use private files (0600) inside a process-owned private directory (0700); `ensure_dirs` also restricts existing backup directories.
 - Keep LibreOffice operations bounded to intended workspaces and artifact paths.
+- Headless conversion leaves VCL selection to LibreOffice unless the runtime explicitly sets `SAL_USE_VCLPLUGIN`; forcing `gen` requires X11 even with `--headless`. Preserve native diagnostics when exit-success produces no output.
 - Route APT commands through `system_packages.run_runtime_apt`; Kali repairs must use the build's snapshot when resolving LibreOffice/UNO dependencies.
 - Do not expose document contents or temporary files beyond intended UI/tool flows.
 - `office_artifact` reads canonical args `target_format` (export), `open_in_canvas`/`open_in_desktop` (UI intent); legacy aliases `export_format`, `open_canvas`, `open_desktop`, `open_document`, `desktop` still work. Edit operations also read legacy input kwargs: `text`/`value`/`body` for `content`, `old`/`old_text` for `find`, `new`/`new_text`/`replacement` for `replace`, `add_lines`/`append_lines` for append-content, and `edit`/`edits`/`update`/`patch` wrapper kwargs carrying the structured spec. Document only canonical args in model-facing prompts.
