@@ -79,6 +79,10 @@ def test_remote_invalid_speed_is_not_silently_replaced_by_local_default():
 
 def test_synthesis_forwards_normalized_weights(monkeypatch) -> None:
     captured: dict = {}
+    monkeypatch.setattr(
+        runtime.image_features, "get_features",
+        lambda: dict.fromkeys(runtime.image_features.FEATURES, True),
+    )
 
     async def fake_synthesize(sentences, **kwargs):
         captured.update({"sentences": sentences, **kwargs})

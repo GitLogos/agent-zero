@@ -1720,6 +1720,13 @@ fi
 
 
 def collect_desktop_status() -> dict[str, Any]:
+    if not image_features.available("desktop"):
+        return {
+            "ok": True, "included": False, "healthy": False, "state": "excluded",
+            "office_available": image_features.available("office"),
+            "installing": False, "missing": [], "binaries": {}, "xpra_html_root": "",
+            "message": image_features.missing_reason("desktop"),
+        }
     desktop = virtual_desktop.collect_status()
     binaries = {
         **desktop["binaries"],
@@ -1754,6 +1761,7 @@ def collect_desktop_status() -> dict[str, Any]:
     installing = bool(preparation.get("preparing")) and not healthy
     return {
         "ok": True,
+        "included": True,
         "office_available": image_features.available("office"),
         "healthy": healthy,
         "state": "healthy" if healthy else "installing" if installing else "missing",

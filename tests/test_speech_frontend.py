@@ -183,3 +183,35 @@ vm.runInThisContext(source + "\nglobalThis.Microphone = MicrophoneInput;");
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)
+
+
+def test_excluded_local_tts_provider_never_allows_browser_fallback():
+    script = r"""
+const fs = require("node:fs");
+const vm = require("node:vm");
+const assert = require("node:assert/strict");
+global.createStore = (name, model) => model;
+let provider;
+global.ttsService = {
+  registerProvider: (name, value) => { provider = value; return () => {}; },
+};
+global.callJsonApi = async () => ({
+  success: false, backend: "local", allow_browser_fallback: false,
+  error: "Local Kokoro is not included in this image",
+});
+let source = fs.readFileSync("plugins/_kokoro_tts/webui/kokoro-tts-store.js", "utf8");
+source = source.replace(/^import .*;$/gm, "").replace("export const store", "globalThis.store");
+vm.runInThisContext(source);
+(async () => {
+  store.enabled = true;
+  store.localAvailable = false;
+  store.registerProvider();
+  assert.equal(provider.allowBrowserFallback(), false);
+  await assert.rejects(provider.synthesize("Fixture"), error => error.allowBrowserFallback === false);
+  store.localAvailable = true;
+  assert.equal(provider.allowBrowserFallback(), true);
+  store.config.backend = "openai";
+  assert.equal(provider.allowBrowserFallback(), false);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)

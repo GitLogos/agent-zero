@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from helpers.api import ApiHandler, Request
+from helpers import image_features
 from plugins._desktop.helpers import desktop_session
 from plugins._office.helpers import document_store, libreoffice
 
@@ -70,6 +71,11 @@ class OfficeSession(ApiHandler):
                 "document": _public_doc(doc),
             }
         if str(doc.get("extension") or "").lower() in desktop_session.OFFICIAL_EXTENSIONS:
+            if not image_features.available("desktop"):
+                return {
+                    "ok": False, "error": image_features.missing_reason("desktop"),
+                    "document": _public_doc(doc),
+                }
             if input.get("open_in_desktop") is not True:
                 return {
                     "ok": True,

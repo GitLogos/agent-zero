@@ -68,6 +68,20 @@ def test_office_free_desktop_uses_editor_text_association(tmp_path, controlled_f
     assert "libreoffice-writer.desktop" not in path.read_text()
 
 
+def test_headless_office_cannot_advertise_a_live_desktop(controlled_features):
+    from plugins._office.api.office_session import OfficeSession
+
+    controlled_features["desktop"] = False
+    status = desktop_session.collect_desktop_status()
+    assert status["state"] == "excluded" and not status["installing"]
+    assert status["office_available"]
+    handler = object.__new__(OfficeSession)
+    result = asyncio.run(handler._open_document(
+        {"extension": "odt", "path": "/tmp/fixture.odt", "file_id": "fixture"}, {}, None,
+    ))
+    assert not result["ok"] and "not included" in result["error"]
+
+
 @pytest.mark.parametrize("feature,runtime", [("whisper", stt), ("kokoro", tts)])
 def test_excluded_local_speech_has_explicit_errors_without_affecting_external(feature, runtime, controlled_features):
     controlled_features[feature] = False
