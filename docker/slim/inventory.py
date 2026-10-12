@@ -1,5 +1,6 @@
-"""Read-only filesystem inventory, run inside the image without its entrypoint."""
+"""Read-only image inventory; its name must not shadow Python's profile module."""
 
+import ast
 import importlib.metadata
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
 
 def command(*args):
@@ -111,6 +113,52 @@ def elf_inventory(roots):
     return sorted(result, key=lambda item: item["debug_section_bytes"], reverse=True)
 
 
+def whisper_runtime():
+    import torch
+
+    triton_after_torch = "triton" in sys.modules
+    import whisper
+    from whisper.timing import dtw
+
+    triton_after_whisper = "triton" in sys.modules
+    alignment = dtw(torch.zeros((2, 3), device="cpu"))
+    assert len(alignment) == 2
+    timing = Path(whisper.__file__).parent / "timing.py"
+    functions = []
+    for node in ast.walk(ast.parse(timing.read_text())):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        imports = []
+        cuda_guards = []
+        handlers = []
+        for child in ast.walk(node):
+            if isinstance(child, ast.Import):
+                imports.extend(alias.name for alias in child.names)
+            elif isinstance(child, ast.ImportFrom):
+                imports.append(child.module or "")
+            elif isinstance(child, ast.If):
+                predicate = ast.unparse(child.test)
+                if "cuda" in predicate:
+                    cuda_guards.append(predicate)
+            elif isinstance(child, ast.ExceptHandler) and child.type:
+                handlers.append(ast.unparse(child.type))
+        if any("triton" in name for name in imports) or cuda_guards:
+            functions.append({
+                "function": node.name, "imports": imports,
+                "cuda_guards": cuda_guards, "handled_exceptions": handlers,
+            })
+    return {
+        "torch_version": torch.__version__,
+        "torch_compiled_cuda_version": torch.version.cuda,
+        "torch_cuda_available": torch.cuda.is_available(),
+        "triton_imported_after_torch": triton_after_torch,
+        "triton_imported_after_whisper": triton_after_whisper,
+        "triton_imported_after_cpu_alignment": "triton" in sys.modules,
+        "cpu_alignment_succeeded": True,
+        "whisper_timing_dependency_paths": functions,
+    }
+
+
 def main():
     roots = (
         "/opt", "/usr", "/root", "/git", "/a0", "/var",
@@ -146,6 +194,11 @@ def main():
         "python_distributions": python,
         "uv_cache": cache_inventory("/root/.cache/uv"),
         "large_elf_files": elf_inventory(("/opt", "/usr")),
+        "whisper_runtime": whisper_runtime(),
+        "bundled_huggingface_models": {
+            str(path): disk_usage(path)
+            for path in Path("/root/.cache/huggingface/hub").glob("models--*")
+        },
         "notes": [
             "Docker image inspect Size is the uncompressed sum of immutable layers.",
             "Merged du usage excludes overwritten/deleted lower-layer files.",

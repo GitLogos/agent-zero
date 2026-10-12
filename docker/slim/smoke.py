@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import cProfile
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ def run(*args, **kwargs):
 
 
 def runtimes():
+    assert callable(cProfile.run), "The check directory must not shadow stdlib profile"
     assert sys.version_info[:2] == (3, 12), sys.version
     output = run(
         "/opt/venv/bin/python", "-c",
@@ -76,7 +78,24 @@ def office_and_ocr():
             source.write_bytes(document_store.template_bytes("document", odf, "IMAGE SMOKE", "Image verification content"))
             assert libreoffice.validate_odf(source)["ok"]
             for target in (ooxml, "pdf"):
+                print(f"Converting {odf} to {target}", flush=True)
                 converted = libreoffice.convert_document(source, target, root)
+                if not converted["ok"]:
+                    diagnostic = subprocess.run(
+                        [
+                            libreoffice.find_soffice(),
+                            f"-env:UserInstallation={Path(root, 'isolated-profile').as_uri()}",
+                            "--headless", "--convert-to", target, "--outdir", str(root), str(source),
+                        ],
+                        text=True, capture_output=True, timeout=60,
+                    )
+                    print(json.dumps({
+                        "isolated_cli_exit": diagnostic.returncode,
+                        "isolated_cli_stdout": diagnostic.stdout,
+                        "isolated_cli_stderr": diagnostic.stderr,
+                        "isolated_cli_output_exists": source.with_suffix("." + target).exists(),
+                        "framework_conversion_result": converted,
+                    }, indent=2), flush=True)
                 assert converted["ok"], converted
                 output = Path(converted["path"])
                 assert output.stat().st_size > 100, output
@@ -121,7 +140,7 @@ async def browser():
     from plugins._browser.helpers.interactive_view import BrowserInteractiveView
     from plugins._browser.helpers.playwright import get_playwright_binary
 
-    viewer = BrowserInteractiveView()
+    viewer = BrowserInteractiveView("image-smoke")
     try:
         state = viewer.ensure_viewer(1024, 768)
         assert state["available"], state
@@ -209,16 +228,23 @@ def main():
     if "--offline-memory" in sys.argv:
         asyncio.run(memory())
         return
-    cases = {
-        "runtimes": runtimes,
-        "offline_memory": offline_memory,
-        "office_ocr_parsing_ffmpeg": office_and_ocr,
-        "plugin_hooks": plugin_hooks,
-        "browser_headless_and_interactive": lambda: asyncio.run(browser()),
-        "live_office": live_office,
-        "search_and_services": search_and_services,
-        "speech_synthesis_and_transcription": lambda: asyncio.run(speech()),
-    }
+    if "--baseline" in sys.argv:
+        cases = {
+            "runtimes": runtimes,
+            "offline_memory": offline_memory,
+            "office_ocr_parsing_ffmpeg": office_and_ocr,
+        }
+    else:
+        cases = {
+            "runtimes": runtimes,
+            "offline_memory": offline_memory,
+            "office_ocr_parsing_ffmpeg": office_and_ocr,
+            "plugin_hooks": plugin_hooks,
+            "browser_headless_and_interactive": lambda: asyncio.run(browser()),
+            "live_office": live_office,
+            "search_and_services": search_and_services,
+            "speech_synthesis_and_transcription": lambda: asyncio.run(speech()),
+        }
     results = {}
     for name, check in cases.items():
         print(f"\n=== {name} ===", flush=True)

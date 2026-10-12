@@ -51,6 +51,8 @@ controls do not change the user's runtime cache behavior.
 builds native amd64/arm64 candidates. Artifacts contain Docker image inspection,
 layer history, filesystem allocation, APT installed-size metadata, Python package
 inventories, UV hardlink accounting, ELF section sizes, and smoke/startup logs.
+Baseline memory/Office checks distinguish existing failures from candidate
+regressions; they never waive a failing candidate publication gate.
 
 Compare **uncompressed Docker image `Size`**, not compressed registry transfer
 size. Merged `du` allocation excludes deleted lower-layer bytes and includes
@@ -66,8 +68,13 @@ speech synthesis followed by transcription. Speech checks use the existing
 model-download behavior in the test container; downloaded test assets are not
 added to the image.
 
-Only candidates passing these checks publish
-`experimental-<full-commit-sha>-<architecture>` tags. The multi-architecture
+Keep `inventory.py` named distinctly from Python's standard-library `profile`
+module: placing a `profile.py` beside the smoke runner breaks imports that use
+`cProfile`, including model libraries.
+
+Push-triggered builds and default manual runs do not publish. Explicit manual
+dispatch with `publish_experimental=true` publishes only candidates passing all
+checks as `experimental-<full-commit-sha>-<architecture>` tags. The multi-architecture
 `experimental-<full-commit-sha>` tag requires both architectures to pass. This
 workflow never replaces `latest` or the existing stable branch tag, and does not
 claim a 3 GB reduction unless the measured amd64 difference reaches that value.
