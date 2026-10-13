@@ -1,0 +1,97 @@
+name: Build Agent Zero Image Profiles
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_experimental:
+        description: Publish experimental GHCR tags only after build checks pass
+        type: boolean
+        default: false
+      include_desktop:
+        description: Include Xfce Desktop and file manager
+        type: boolean
+        default: true
+      include_office:
+        description: Include LibreOffice and UNO editing, conversion and export
+        type: boolean
+        default: true
+      include_whisper:
+        description: Include local CPU Whisper (off requires external STT)
+        type: boolean
+        default: true
+      include_kokoro:
+        description: Include local CPU Kokoro (off requires external or explicit browser TTS)
+        type: boolean
+        default: true
+      include_chromium:
+        description: Include internal Chromium (off requires Host browser configuration)
+        type: boolean
+        default: true
+      include_searxng:
+        description: Include bundled search server (off requires A0_SEARXNG_URL)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  launch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch selected build on image-rebuild
+        id: dispatch
+        uses: actions/github-script@v7
+        env:
+          PROFILE_INPUTS: ${{ toJSON(inputs) }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const ref = "image-rebuild";
+            const selected = JSON.parse(process.env.PROFILE_INPUTS);
+            const names = [
+              "include_desktop", "include_office", "include_whisper",
+              "include_kokoro", "include_chromium", "include_searxng",
+              "publish_experimental",
+            ];
+            const inputs = {};
+            for (const name of names) {
+              if (typeof selected[name] !== "boolean") {
+                throw new Error(`Expected a boolean workflow input: ${name}`);
+              }
+              inputs[name] = String(selected[name]);
+            }
+            const { data: source } = await github.rest.repos.getBranch({ owner, repo, branch: ref });
+            const { data: dispatch } = await github.rest.actions.createWorkflowDispatch({
+              owner, repo, workflow_id: "image-footprint.yml", ref, inputs,
+              headers: { "X-GitHub-Api-Version": "2026-03-10" },
+            });
+            if (!Number.isSafeInteger(dispatch?.workflow_run_id) || !dispatch.html_url) {
+              throw new Error("GitHub dispatch did not return the required build run ID and URL.");
+            }
+            const run_id = dispatch.workflow_run_id;
+            const { data: run } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id });
+            if (run.head_branch !== ref || run.head_sha !== source.commit.sha) {
+              await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id });
+              throw new Error("Source changed during dispatch; the forwarded run was cancelled. Retry the launcher.");
+            }
+            core.setOutput("build_run_id", String(run_id));
+            core.setOutput("build_run_url", dispatch.html_url);
+            core.info(`Build run: ${dispatch.html_url}`);
+            core.info(`Build source: ${ref} at ${run.head_sha}`);
+            await core.summary
+              .addHeading("Image build dispatched")
+              .addRaw("This launcher does not build from main. Follow the separate image-rebuild run for build, checks and publication.\n\n")
+              .addLink("Follow the image build", dispatch.html_url)
+              .addRaw("\n\n")
+              .addLink("Exact build source", `${context.serverUrl}/${owner}/${repo}/commit/${run.head_sha}`)
+              .addRaw("\n\n")
+              .addTable([
+                [{ data: "Input", header: true }, { data: "Forwarded value", header: true }],
+                ...names.map(name => [name, inputs[name]]),
+              ])
+              .addRaw("\nExperimental publication requires the selected input and successful build checks. Stable tags are unchanged.\n")
+              .write();
