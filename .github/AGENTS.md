@@ -25,7 +25,7 @@
 - Footprint builds use only the neutral `image-rebuild` ref and enforce CPU-Whisper provenance/Triton absence, targeted speech tests, and local/external speech feature gates before experimental publication.
 - Six manual boolean inclusion inputs default true; event-aware expressions preserve explicit false, while pushes use all-on. `docker/slim/image_profile.py` prevents same-commit profile-tag collisions. Publishing still requires manual opt-in.
 - Startup, targeted regressions and native feature checks have independent outcomes: after successful startup, feature checks still run on regression-test failure for diagnostics. Any failed gate prevents publication.
-- Workflow dispatch UI registration requires the workflow on the default branch; feature-branch verification uses explicit ref-specific API dispatch, not an unapproved merge.
+- Default `main` carries only the manual `image-footprint.yml` launcher: six default-true inclusion inputs and a default-false publication input are forwarded unchanged with the builtin token to the full workflow on `image-rebuild`. It links the separate build run and has no push trigger or application checkout; source/commit races cancel only its own forwarded run.
 
 ## Work Guidance
 

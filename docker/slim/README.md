@@ -146,9 +146,18 @@ Configure external STT/TTS in their existing plugin settings using base URL,
 model, optional API key, and TTS voice; see the plugin READMEs for upload/privacy
 semantics. External GPU-provider connectivity is unchanged.
 
-This workflow currently lives on `image-rebuild`, not default `main`. Normal
-GitHub default-branch dispatch UI registration requires a separately approved
-main change. Until then, dispatch the registered workflow explicitly by ref:
+Open [Build Agent Zero Image Profiles](https://github.com/GitLogos/agent-zero/actions/workflows/image-footprint.yml)
+and choose **Run workflow**, leaving the branch selector on **main**. Its small
+workflow-only launcher exposes all six default-on checkboxes and the default-off
+experimental publication checkbox, then forwards their exact true/false values
+to the full build on `image-rebuild`. The launcher summary links the separate
+build run and exact source commit; launcher success means dispatch succeeded,
+not that the image has finished building.
+
+Only this launcher was added to `main`, not the application/image changes. It
+has no push trigger, uses the builtin token with `actions: write` and
+`contents: read`, and cannot build from the older application source on main.
+The existing direct branch-specific CLI dispatch remains available:
 
 ```bash
 gh workflow run image-footprint.yml --repo GitLogos/agent-zero --ref image-rebuild \
