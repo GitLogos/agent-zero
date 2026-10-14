@@ -10,6 +10,7 @@
 - `inventory.py` inventories a container filesystem without starting services; do not name it `profile.py`, which shadows a Python standard-library module when checks run beside it.
 - `smoke.py` exercises real features in a disposable started container.
 - `image_profile.py` owns deterministic component-profile experimental tag suffixes; all-on retains existing tag names.
+- `promote_image.py` validates checked publication provenance and copies exact multi-platform index bytes to the selected-profile `image-rebuild` alias; credentials never follow cross-host blob redirects.
 - `prepare_cpu_whisper.py` builds the hash-pinned upstream source with isolated `whisper-build-requirements.txt` tooling, then changes dependency metadata only.
 - Bootstrap must use only the standard library; requirement parsing/repackaging runs in that isolated builder, not the pre-install framework environment.
 - `README.md` describes supported features and build/measurement commands.
@@ -22,6 +23,7 @@
 - Do not remove supported components, fonts, models, formats, compilation tools, or offline capabilities to meet a size target without approval.
 - Keep experimental tags separate from stable images until functional checks succeed.
 - Diagnostics and push-triggered runs do not publish; experimental publishing additionally requires explicit manual dispatch opt-in.
+- The approved mutable `image-rebuild` alias follows the latest selected checked publication, retaining immutable experimental tags and both architectures. Retag-only promotion requires a fixed digest and source run; shared job concurrency and newer-publication checks prevent stale alias writes.
 - Preserve Agent Zero Git metadata for versioning, self-update, and rollback.
 - Included local Whisper uses the approved `openai-whisper==20250625+a0cpu.1`, preserving every upstream code/asset byte and normal resolution with Triton optional under `cuda`. Other speech roots are omitted only by their approved profile flags; included local CPU engines keep their defaults.
 - Preserve the CPU wheel/provenance under `/opt/a0-wheels` and installed `a0-cpu-provenance.json`; source hash, recipe hash and code/asset digests make the modification auditable.
@@ -45,6 +47,7 @@
 - Check wheel RECORD/payload/default markers and `uv pip check`; native gates require Triton absence and unchanged model choices, plus real local synthesis/transcription and loopback-only external API tests.
 - Cover all-on, all-off and meaningful mixed profiles, including Office without Desktop and Desktop without Office. Execute included capabilities and external speech/search, and check excluded APIs retain security gates; do not claim unavailable features passed.
 - Desktop gateway verification creates sessions through the live WebUI API, not a separate check process: virtual-desktop token registration is process-local. Keep CSRF/cookie handling and explicit session shutdown in the gate.
+- Run `pytest tests/test_image_promotion.py tests/test_image_features.py` for gated alias/provenance/profile behavior; verify promoted index bytes/digest and native capability labels against source in GHCR without rebuilding.
 
 ## Child DOX Index
 

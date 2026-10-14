@@ -34,14 +34,44 @@ on:
         description: Include bundled search server (off requires A0_SEARXNG_URL)
         type: boolean
         default: true
+      promote_run_id:
+        description: Optional checked publication run ID to retag without rebuilding (requires publication enabled)
+        type: string
+        default: ""
+      promote_digest:
+        description: Exact published multi-architecture index digest required for retag-only mode
+        type: string
+        default: ""
 
 permissions:
   contents: read
+  actions: read
   packages: write
 
 jobs:
-  baseline:
+  validate-request:
     if: github.ref == 'refs/heads/image-rebuild'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate optional retag-only request
+        env:
+          SOURCE_RUN: ${{ inputs.promote_run_id }}
+          SOURCE_DIGEST: ${{ inputs.promote_digest }}
+          PUBLISH: ${{ inputs.publish_experimental }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          run, digest = os.environ["SOURCE_RUN"], os.environ["SOURCE_DIGEST"]
+          if run or digest:
+              if not (run.isdecimal() and int(run) > 0 and re.fullmatch(r"sha256:[0-9a-f]{64}", digest)):
+                  raise ValueError("Retag-only mode requires a positive run ID and exact sha256 index digest.")
+              if os.environ["PUBLISH"] != "true":
+                  raise ValueError("Retag-only mode requires explicit publication approval.")
+          PY
+
+  baseline:
+    needs: validate-request
+    if: github.ref == 'refs/heads/image-rebuild' && !inputs.promote_run_id && !inputs.promote_digest
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -269,3 +299,38 @@ jobs:
           test -n "$IMAGE"
           docker buildx imagetools create --tag "$IMAGE" "$IMAGE-amd64" "$IMAGE-arm64"
           docker buildx imagetools inspect "$IMAGE"
+
+  rolling-tag:
+    needs: publish-index
+    if: success() && github.event_name == 'workflow_dispatch' && inputs.publish_experimental
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: ghcr-image-rebuild-alias
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Maintain the selected-profile rolling tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+        run: python3 docker/slim/promote_image.py
+
+  promote-existing:
+    needs: validate-request
+    if: github.ref == 'refs/heads/image-rebuild' && github.event_name == 'workflow_dispatch' && inputs.publish_experimental && inputs.promote_run_id && inputs.promote_digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: ghcr-image-rebuild-alias
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Promote only the fixed previously checked index without rebuilding
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN_ID: ${{ inputs.promote_run_id }}
+          EXPECTED_DIGEST: ${{ inputs.promote_digest }}
+        run: python3 docker/slim/promote_image.py

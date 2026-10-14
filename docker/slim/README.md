@@ -106,9 +106,28 @@ dispatch with `publish_experimental=true` publishes only candidates passing all
 checks. All-on builds retain `experimental-<full-commit-sha>-<architecture>` tags.
 Other profiles append `-d<0|1>-o<0|1>-w<0|1>-k<0|1>-c<0|1>-s<0|1>` before the
 architecture, in Desktop/Office/Whisper/Kokoro/Chromium/SearXNG order.
-The corresponding architecture-free index tag requires both architectures to pass. This
-workflow never replaces `latest` or the existing stable branch tag, and does not
+The corresponding architecture-free index tag requires both architectures to pass.
+Successful opted-in publications also update
+`ghcr.io/gitlogos/agent-zero-slim:image-rebuild` to that exact multi-architecture
+index. **This is a mutable selected-profile alias, not always the all-on image.**
+The run summary lists every included capability, the validated build and the
+retained experimental tag/digest. Its initial selection is Desktop only:
+Desktop enabled; Office, local Whisper, local Kokoro, Chromium and SearXNG disabled.
+Choose the immutable SHA/profile tag or digest to pin a particular selection.
+Alias updates serialize without cancelling builds and reconcile the newest
+successfully published selection even if an older build triggered the alias job.
+
+This workflow never replaces `latest`, `main`, `slim-image-ghcr` or `sha-67512fa`, and does not
 claim a 3 GB reduction unless the measured amd64 difference reaches that value.
+
+To promote an already checked image without rebuilding, dispatch the full source
+workflow on `image-rebuild` with `publish_experimental=true`, `promote_run_id`
+and `promote_digest` (the exact `sha256:` multi-architecture index digest).
+Both promotion fields are required together. This mode skips all image builds
+and verifies the prior manual run's native checks, published digest, source and
+capability labels before copying the index bytes. The six inclusion checkboxes
+do not change an existing image in retag-only mode; its recorded profile applies.
+Normal main-launcher runs leave these source-only promotion fields empty.
 
 ## Optional component profiles
 
