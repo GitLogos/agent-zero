@@ -60,6 +60,7 @@ try {
       oscillator.connect(destination);
       oscillator.start();
       await context.resume();
+      await delay(200);
       let mic;
       const owner = {
         config: {waiting_timeout: 2000}, notifyStatusChange() {},
@@ -85,8 +86,15 @@ try {
         mic._status = "processing";
         mic.clearCaptureTimers();
         await mic.process();
-        if (uploads.length !== before + 1) throw new Error("Missing complete utterance upload.");
-        fixtures.push({mime, turn, audio: uploads.at(-1)});
+        if (uploads.length !== before + 1) {
+          throw new Error("Missing complete utterance upload (" + mime + ", turn " + turn + "): " + errors.join("; "));
+        }
+        const audio = uploads.at(-1);
+        const decoded = await context.decodeAudioData(Uint8Array.from(atob(audio), value => value.charCodeAt(0)).buffer);
+        if (!decoded.length || !decoded.getChannelData(0).some(value => value !== 0)) {
+          throw new Error("Native recording was not independently decodable.");
+        }
+        fixtures.push({mime, turn, audio, decoded_samples: decoded.length});
       }
       const before = uploads.length;
       let conversionStarted, release;
@@ -133,15 +141,20 @@ try {
     const extension = fixture.mime.includes("mp4") ? "mp4" : "webm";
     await writeFile(path.join(output, `browser-${index}.${extension}`), Buffer.from(fixture.audio, "base64"));
   }
-  console.log(JSON.stringify({ native_recordings: fixtures.length, mime_types: [...new Set(fixtures.map(fixture => fixture.mime))] }));
+  console.log(JSON.stringify({
+    native_recordings: fixtures.length,
+    mime_types: [...new Set(fixtures.map(fixture => fixture.mime))],
+    independently_decoded_samples: fixtures.map(fixture => fixture.decoded_samples),
+  }));
 } finally {
   socket?.close();
-  if (chrome.exitCode === null && chrome.pid) {
+  if (chrome.exitCode === null && chrome.signalCode === null && chrome.pid) {
+    const exited = once(chrome, "exit");
     chrome.kill();
-    await Promise.race([once(chrome, "exit"), sleep(3000)]);
-    if (chrome.exitCode === null) {
+    await Promise.race([exited, sleep(3000, undefined, { ref: false })]);
+    if (chrome.exitCode === null && chrome.signalCode === null) {
       chrome.kill("SIGKILL");
-      await once(chrome, "exit");
+      await exited;
     }
   }
   await rm(profile, { recursive: true, force: true });
