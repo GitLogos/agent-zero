@@ -106,7 +106,9 @@ def test_workflow_alias_is_opt_in_serialized_and_has_no_rebuild_promotion_path()
     assert inputs["promote_run_id"]["default"] == inputs["promote_digest"]["default"] == ""
     jobs = workflow["jobs"]
     assert "!inputs.promote_run_id" in jobs["baseline"]["if"]
-    assert jobs["baseline"]["needs"] == jobs["promote-existing"]["needs"] == "validate-request"
+    assert jobs["speech-compatibility"]["needs"] == jobs["promote-existing"]["needs"] == "validate-request"
+    assert jobs["baseline"]["needs"] == "speech-compatibility"
+    assert "!inputs.promote_run_id" in jobs["speech-compatibility"]["if"]
     for name in ("rolling-tag", "promote-existing"):
         job = jobs[name]
         assert "workflow_dispatch" in job["if"] and "inputs.publish_experimental" in job["if"]

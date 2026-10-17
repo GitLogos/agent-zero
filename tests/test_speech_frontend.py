@@ -145,7 +145,11 @@ vm.runInThisContext(source + "\nglobalThis.Microphone = MicrophoneInput;");
   const makeMic = () => {
     const mic = new global.Microphone({ notifyStatusChange() {}, config: {} }, async () => sent++);
     mic._status = "processing";
-    mic.audioChunks = [new Blob(["fixture"])];
+    mic.capture = {
+      recorder: { state: "inactive", mimeType: "audio/webm" },
+      chunks: [new Blob(["fixture"], { type: "audio/webm" })],
+      stopped: Promise.resolve(),
+    };
     mic.convertBlobToBase64 = async () => "fixture";
     return mic;
   };
@@ -180,6 +184,104 @@ vm.runInThisContext(source + "\nglobalThis.Microphone = MicrophoneInput;");
   assert.equal(sent, 0);
   assert.equal(notices.at(-1), "External STT HTTP 503");
   assert.equal(failed.status, "listening");
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)
+
+
+def test_recorder_keeps_complete_containers_preroll_and_final_data_for_repeated_turns():
+    script = r"""
+const fs = require("node:fs");
+const vm = require("node:vm");
+const assert = require("node:assert/strict");
+let source = fs.readFileSync("plugins/_whisper_stt/webui/whisper-stt-store.js", "utf8");
+source = source.replace(/^import .*;$/gm, "").replace("export const store", "globalThis.store");
+global.createStore = (name, model) => model;
+global.requestAnimationFrame = () => 0;
+global.cancelAnimationFrame = () => {};
+const timers = new Map();
+let timerId = 0;
+global.setTimeout = (fn, delay) => {
+  const id = ++timerId;
+  timers.set(id, { fn: () => { timers.delete(id); fn(); }, delay });
+  return id;
+};
+global.clearTimeout = id => timers.delete(id);
+global.window = { toastFetchError: (title, error) => { throw error; } };
+const recordings = [];
+class Recorder {
+  constructor(stream) { this.stream = stream; this.mimeType = "audio/webm;codecs=opus"; this.state = "inactive"; recordings.push(this); }
+  start(timeslice) {
+    assert.equal(timeslice, 250);
+    this.state = "recording";
+    this.emit("HEADER");
+  }
+  emit(text) { this.ondataavailable({ data: new Blob([text], { type: this.mimeType }) }); }
+  stop() {
+    this.state = "inactive";
+    queueMicrotask(() => { this.emit("FINAL"); this.onstop(); });
+  }
+}
+global.MediaRecorder = Recorder;
+const uploads = [];
+global.callJsonApi = async (url, input) => { uploads.push(input.audio); return { success: true, text: "fixture" }; };
+vm.runInThisContext(source + "\nglobalThis.Microphone = MicrophoneInput;");
+(async () => {
+  let delivered = 0;
+  const mic = new Microphone({ notifyStatusChange() {}, config: { waiting_timeout: 2000 }, stop() { mic.status = "inactive"; mic.dispose(); } }, async () => delivered++);
+  mic.mediaStream = {};
+  const blobs = [];
+  mic.convertBlobToBase64 = async blob => { blobs.push(blob); return await blob.text(); };
+  for (let turn = 0; turn < 3; turn++) {
+    mic.status = "listening";
+    const initial = mic.capture.recorder;
+    initial.emit("PREROLL");
+    // Begin a new idle recorder while the current one still retains preroll.
+    const rotate = timers.get(mic.rotationTimer);
+    rotate.fn();
+    assert.ok(mic.nextCapture);
+    if (turn === 1) {
+      const old = mic.capture;
+      const ready = timers.get(mic.rotationTimer);
+      mic.nextCapture.recorder.emit("IDLE-PREROLL");
+      ready.fn();
+      assert.notEqual(mic.capture, old);
+      assert.equal(old.recorder.state, "inactive");
+    }
+    const active = mic.capture.recorder;
+    mic.status = "recording";
+    assert.equal(mic.nextCapture, null);
+    active.emit("VOICE");
+    mic.status = "waiting";
+    active.emit("SILENCE");
+    mic.status = "recording";
+    active.emit("MORE");
+    mic.status = "waiting";
+    // Invoke process directly to observe its awaited final data.
+    mic._status = "processing";
+    mic.clearCaptureTimers();
+    const before = uploads.length;
+    const processing = mic.process();
+    assert.equal(uploads.length, before);
+    await processing;
+    assert.equal(uploads.length, before + 1);
+    assert.match(uploads.at(-1), /^HEADER(?:PREROLL|IDLE-PREROLL)VOICESILENCEMOREFINAL$/);
+    assert.equal(blobs.at(-1).type, "audio/webm;codecs=opus");
+    assert.equal(mic.status, "listening");
+    // The return to listening creates a fresh independent container.
+    assert.equal(mic.capture.recorder.state, "recording");
+  }
+  assert.equal(delivered, 3);
+  const before = uploads.length;
+  mic.status = "recording";
+  mic._status = "processing";
+  const late = mic.process();
+  mic.status = "inactive";
+  mic.dispose();
+  await late;
+  assert.equal(uploads.length, before);
+  assert.equal(timers.size, 0);
+  assert.ok(recordings.every(recorder => recorder.state === "inactive"));
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)

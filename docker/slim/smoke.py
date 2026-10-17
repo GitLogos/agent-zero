@@ -486,6 +486,8 @@ async def speech():
 def external_speech_api():
     """Exercise authenticated live WebUI routes against a loopback-only fixture service."""
     from helpers import plugins
+    from email.parser import BytesParser
+    from email.policy import default
 
     audio = io.BytesIO()
     with wave.open(audio, "wb") as wav:
@@ -494,6 +496,16 @@ def external_speech_api():
         wav.setframerate(24000)
         wav.writeframes(b"\x00\x01" * 240)
     fixture = audio.getvalue()
+    recordings = [fixture]
+    with tempfile.TemporaryDirectory() as directory:
+        for extension, codec in (("webm", "libopus"), ("mp4", "aac")):
+            recording = Path(directory, "tone." + extension)
+            subprocess.run([
+                "ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi",
+                "-i", "sine=frequency=440:sample_rate=48000:duration=0.2",
+                "-ac", "2", "-c:a", codec, str(recording),
+            ], check=True, capture_output=True, timeout=20)
+            recordings.append(recording.read_bytes())
     received = []
     fixture_key = os.urandom(16).hex()
     expected_key = ""
@@ -511,7 +523,18 @@ def external_speech_api():
             if fail:
                 payload, mime, status = b"fixture provider error", "text/plain", 503
             elif self.path == "/v1/audio/transcriptions":
-                assert fixture in body and b"fixture-model" in body
+                message = BytesParser(policy=default).parsebytes(
+                    b"Content-Type: " + self.headers["Content-Type"].encode() + b"\r\n\r\n" + body
+                )
+                file = next(part for part in message.iter_parts() if part.get_filename())
+                assert file.get_filename() == "microphone.wav" and file.get_content_type() == "audio/wav"
+                wav_data = file.get_payload(decode=True)
+                assert int.from_bytes(wav_data[4:8], "little") == len(wav_data) - 8
+                assert int.from_bytes(wav_data[40:44], "little") == len(wav_data) - 44
+                with wave.open(io.BytesIO(wav_data), "rb") as audio:
+                    assert (audio.getnchannels(), audio.getframerate(), audio.getsampwidth()) == (1, 16000, 2)
+                    assert audio.getnframes() > 0 and any(audio.readframes(audio.getnframes()))
+                assert b"fixture-model" in body
                 assert b'name="language"' not in body
                 payload, mime, status = b'{"text":"Fixture transcript","language":"en"}', "application/json", 200
             elif self.path == "/v1/audio/speech":
@@ -547,6 +570,17 @@ def external_speech_api():
         with client.open(urllib.request.Request(origin + "/api/csrf_token", headers={"Origin": origin}), timeout=30) as response:
             csrf = json.load(response)
         assert csrf["ok"], csrf
+        unprotected = urllib.request.Request(
+            origin + "/api/plugins/_whisper_stt/transcribe",
+            data=json.dumps({"audio": base64.b64encode(fixture).decode()}).encode(),
+            headers={"Content-Type": "application/json", "Origin": origin},
+        )
+        try:
+            urllib.request.urlopen(unprotected, timeout=15)
+        except urllib.error.HTTPError as error:
+            assert error.code == 403, error.code
+        else:
+            raise AssertionError("Transcription accepted a request without the CSRF cookie/token.")
         for name in names:
             path = Path(plugins.determine_plugin_asset_path(name, "", "", "config.json"))
             backups[path] = path.read_bytes() if path.exists() else None
@@ -565,8 +599,9 @@ def external_speech_api():
                 assert status["enabled"] and status["model"]["ready"], status
                 assert "external_api_key" not in status["config"]
                 assert "external_base_url" not in status["config"]
-            stt = api("plugins/_whisper_stt/transcribe", {"audio": base64.b64encode(fixture).decode()})
-            assert stt["success"] and stt["text"] == "Fixture transcript", stt
+            for recording in recordings:
+                stt = api("plugins/_whisper_stt/transcribe", {"audio": base64.b64encode(recording).decode()})
+                assert stt["success"] and stt["text"] == "Fixture transcript", stt
             tts = api("plugins/_kokoro_tts/synthesize", {"text": "Fixture text."})
             assert tts["success"] and tts["mime_type"] == "audio/wav", tts
             assert base64.b64decode(tts["audio"]) == fixture
@@ -578,7 +613,13 @@ def external_speech_api():
             failure = api(path, data)
             assert not failure["success"] and "HTTP 503" in failure["error"], failure
             assert "fixture provider error" not in failure["error"]
-        assert len(received) == 6, received
+        assert len(received) == 10, received
+        before = len(received)
+        invalid = api("plugins/_whisper_stt/transcribe", {
+            "audio": base64.b64encode(b"\x1a\x45\xdf\xa3incomplete").decode(),
+        })
+        assert not invalid["success"] and "decode" in invalid["error"], invalid
+        assert len(received) == before, "Malformed recording reached the provider"
     finally:
         for path, content in backups.items():
             if content is None:
@@ -588,7 +629,7 @@ def external_speech_api():
         server.shutdown()
         server.server_close()
         worker.join(timeout=5)
-    print("Live STT/TTS APIs use loopback fixtures with keyless/authenticated calls, WAV playback and explicit errors.")
+    print("Live CSRF-protected STT API converts real WebM/MP4/WAV to finalized mono16k PCM WAV; TTS and errors remain explicit.")
 
 
 def main():

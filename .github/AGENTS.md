@@ -28,6 +28,7 @@
 - Default `main` carries only the manual `image-footprint.yml` launcher: six default-true inclusion inputs and a default-false publication input are forwarded unchanged with the builtin token to the full workflow on `image-rebuild`. It links the separate build run and has no push trigger or application checkout; source/commit races cancel only its own forwarded run.
 - Successful opted-in publications maintain the mutable GHCR `image-rebuild` alias for the selected profile, not implicitly all-on. Alias jobs serialize without cancelling builds and reconcile the newest successful index publication even when an older build triggered the job.
 - Retag-only dispatch requires both a checked source run ID and its exact index digest plus publication opt-in. `docker/slim/promote_image.py` verifies native gates, publication logs, both platform configurations and capability labels, then copies exact index bytes without rebuilding; no other stable alias is writable.
+- Normal image runs require a speech compatibility preflight before building: real codec/multipart tests, native browser recorder lifecycle and the pinned whisper.cpp server in-memory decoder. Verification tooling/source stays in the isolated CI runner, not the image; retag-only requests skip this and all payload builds.
 
 ## Work Guidance
 

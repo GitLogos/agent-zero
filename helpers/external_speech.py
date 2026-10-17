@@ -7,8 +7,11 @@ from dataclasses import dataclass, field
 import io
 import json
 import math
+from pathlib import Path
 import re
+import tempfile
 from urllib.parse import urlsplit, urlunsplit
+import wave
 
 import httpx
 
@@ -21,6 +24,9 @@ DEFAULT_CONFIG = {
     "request_timeout": 120.0,
 }
 MAX_AUDIO_BYTES = 50 * 1024 * 1024
+MAX_STT_SECONDS = 600
+STT_SAMPLE_RATE = 16000
+STT_CONVERSION_TIMEOUT = 30
 
 
 @dataclass(frozen=True)
@@ -143,6 +149,75 @@ async def _request(settings: Connection, endpoint: str, **kwargs) -> bytes:
         raise ValueError("External speech connection failed; check the URL and TLS/proxy settings.") from None
 
 
+async def _pcm_wav(audio: bytes) -> bytes:
+    """Decode locally; only finalized PCM WAV is sent to external STT."""
+    max_pcm_bytes = MAX_STT_SECONDS * STT_SAMPLE_RATE * 2
+    with tempfile.TemporaryDirectory(prefix="a0-stt-") as directory:
+        source = Path(directory, "recording")
+        # Shield the owned write so cancellation cannot race temporary cleanup.
+        write = asyncio.create_task(asyncio.to_thread(source.write_bytes, audio))
+        try:
+            await asyncio.shield(write)
+        finally:
+            await write
+        process = None
+        try:
+            async with asyncio.timeout(STT_CONVERSION_TIMEOUT):
+                try:
+                    launch = asyncio.create_task(asyncio.create_subprocess_exec(
+                        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                        "-xerror", "-max_alloc", "67108864",
+                        "-protocol_whitelist", "file,pipe", "-threads", "1",
+                        "-i", str(source), "-map", "0:a:0", "-vn", "-sn", "-dn",
+                        "-t", str(MAX_STT_SECONDS + 1), "-ac", "1", "-ar", str(STT_SAMPLE_RATE),
+                        "-c:a", "pcm_s16le", "-threads", "1", "-f", "s16le", "pipe:1",
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+                        stdin=asyncio.subprocess.DEVNULL,
+                    ))
+                    try:
+                        process = await asyncio.shield(launch)
+                    finally:
+                        if process is None:
+                            process = await launch
+                except FileNotFoundError:
+                    raise ValueError(
+                        "External STT audio conversion requires ffmpeg on the Agent Zero server."
+                    ) from None
+                except (OSError, NotImplementedError):
+                    raise ValueError("External STT could not start the ffmpeg audio converter.") from None
+                pcm = bytearray()
+                assert process.stdout is not None
+                while chunk := await process.stdout.read(64 * 1024):
+                    if len(pcm) + len(chunk) > max_pcm_bytes:
+                        raise ValueError("External STT recordings must not exceed 10 minutes.")
+                    pcm.extend(chunk)
+                if await process.wait() != 0:
+                    raise ValueError(
+                        "External STT could not decode the recording. Send a complete, "
+                        "valid audio file; incomplete or unsupported codecs cannot be uploaded."
+                    )
+                if not pcm or len(pcm) % 2:
+                    raise ValueError("External STT recording contains no decodable audio samples.")
+        except TimeoutError:
+            raise ValueError("External STT audio conversion timed out.") from None
+        finally:
+            if process is not None and process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass  # The owned converter can exit between returncode and kill.
+                await process.communicate()
+    # ffmpeg WAV on stdout has unknown RIFF/data lengths. Finalize a seekable
+    # in-memory WAV instead, including exact lengths for whisper.cpp's decoder.
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(STT_SAMPLE_RATE)
+        wav.writeframes(pcm)
+    return output.getvalue()
+
+
 async def transcribe(audio_base64: str, config: dict, language: str | None) -> dict:
     settings = connection(config)
     if len(audio_base64) > (MAX_AUDIO_BYTES + 2) // 3 * 4:
@@ -155,28 +230,25 @@ async def transcribe(audio_base64: str, config: dict, language: str | None) -> d
         raise ValueError("Audio upload is empty.")
     if len(audio) > MAX_AUDIO_BYTES:
         raise ValueError("Audio upload exceeds the 50 MiB limit.")
-    if audio.startswith(b"RIFF") and audio[8:12] == b"WAVE":
-        filename, mime = "microphone.wav", "audio/wav"
-    elif audio.startswith(b"\x1a\x45\xdf\xa3"):
-        filename, mime = "microphone.webm", "audio/webm"
-    elif audio[4:8] == b"ftyp":
-        filename, mime = "microphone.mp4", "audio/mp4"
-    elif audio.startswith(b"OggS"):
-        filename, mime = "microphone.ogg", "audio/ogg"
-    elif audio.startswith(b"fLaC"):
-        filename, mime = "microphone.flac", "audio/flac"
-    elif audio.startswith(b"ID3") or (len(audio) >= 2 and audio[0] == 255 and audio[1] & 224 == 224):
-        filename, mime = "microphone.mp3", "audio/mpeg"
-    else:
+    if not (
+        (audio.startswith(b"RIFF") and audio[8:12] == b"WAVE")
+        or audio.startswith((b"\x1a\x45\xdf\xa3", b"OggS", b"fLaC", b"ID3"))
+        or audio[4:8] == b"ftyp"
+        or (len(audio) >= 2 and audio[0] == 255 and audio[1] & 224 == 224)
+    ):
         raise ValueError("Audio format is unsupported; use WAV, WebM, MP4, Ogg, FLAC, or MP3.")
     data = {"model": settings.model, "response_format": "json"}
     if language:
         if not re.fullmatch(r"[a-z]{2}", language):
             raise ValueError("External STT language must be a two-letter ISO code or auto.")
         data["language"] = language
+    try:
+        audio = await _pcm_wav(audio)
+    except OSError:
+        raise ValueError("External STT audio conversion failed; check FFmpeg and temporary storage.") from None
     body = await _request(
         settings, "transcriptions", data=data,
-        files={"file": (filename, audio, mime)},
+        files={"file": ("microphone.wav", audio, "audio/wav")},
     )
     try:
         result = json.loads(body)

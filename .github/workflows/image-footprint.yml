@@ -69,8 +69,51 @@ jobs:
                   raise ValueError("Retag-only mode requires explicit publication approval.")
           PY
 
-  baseline:
+  speech-compatibility:
     needs: validate-request
+    if: github.ref == 'refs/heads/image-rebuild' && !inputs.promote_run_id && !inputs.promote_digest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Prepare isolated audio verification tooling
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          command -v cmake
+          command -v g++
+          command -v google-chrome
+          python -m venv "$RUNNER_TEMP/speech-tests"
+          "$RUNNER_TEMP/speech-tests/bin/pip" install --quiet pytest==8.3.5 httpx==0.28.1 soundfile==0.13.1
+      - name: Verify real audio transport and microphone lifecycle
+        run: |
+          set -euo pipefail
+          mkdir -p speech-checks
+          "$RUNNER_TEMP/speech-tests/bin/python" -m pytest -q \
+            tests/test_external_speech.py tests/test_speech_frontend.py \
+            2>&1 | tee speech-checks/regressions.log
+          "$RUNNER_TEMP/speech-tests/bin/python" docker/slim/verify_whisper_decoder.py \
+            2>&1 | tee speech-checks/whisper-decoder.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: speech-decoder-compatibility
+          path: speech-checks
+          if-no-files-found: warn
+
+  baseline:
+    needs: speech-compatibility
     if: github.ref == 'refs/heads/image-rebuild' && !inputs.promote_run_id && !inputs.promote_digest
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -11,6 +11,7 @@
 - `smoke.py` exercises real features in a disposable started container.
 - `image_profile.py` owns deterministic component-profile experimental tag suffixes; all-on retains existing tag names.
 - `promote_image.py` validates checked publication provenance and copies exact multi-platform index bytes to the selected-profile `image-rebuild` alias; credentials never follow cross-host blob redirects.
+- `verify_whisper_decoder.py` builds the hash-pinned upstream whisper.cpp server decoder with FFmpeg integration off and checks real captured multipart audio. `record_microphone.mjs` drives native headless Chromium MediaRecorder with synthetic Web Audio through the actual store's repeated-utterance/preroll/stop-flush lifecycle; these are CI-only tools, not image dependencies.
 - `prepare_cpu_whisper.py` builds the hash-pinned upstream source with isolated `whisper-build-requirements.txt` tooling, then changes dependency metadata only.
 - Bootstrap must use only the standard library; requirement parsing/repackaging runs in that isolated builder, not the pre-install framework environment.
 - `README.md` describes supported features and build/measurement commands.
@@ -48,6 +49,7 @@
 - Cover all-on, all-off and meaningful mixed profiles, including Office without Desktop and Desktop without Office. Execute included capabilities and external speech/search, and check excluded APIs retain security gates; do not claim unavailable features passed.
 - Desktop gateway verification creates sessions through the live WebUI API, not a separate check process: virtual-desktop token registration is process-local. Keep CSRF/cookie handling and explicit session shutdown in the gate.
 - Run `pytest tests/test_image_promotion.py tests/test_image_features.py` for gated alias/provenance/profile behavior; verify promoted index bytes/digest and native capability labels against source in GHCR without rebuilding.
+- Speech preflight precedes image builds and must reproduce raw WebM/MP4 rejection, then decode captured normalized multipart WAV with the actual pinned whisper.cpp in-memory decoder. This proves format compatibility, not model recognition. Native retained-feature gates also send real WebM/MP4/WAV through the live CSRF-protected API with local Whisper omitted.
 
 ## Child DOX Index
 

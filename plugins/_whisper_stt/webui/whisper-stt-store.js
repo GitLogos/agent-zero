@@ -327,8 +327,11 @@ const model = {
       }
     });
 
+    this.microphoneInput = input;
     const initialized = await input.initialize();
-    this.microphoneInput = initialized ? input : null;
+    if ((!initialized || input.disposed) && this.microphoneInput === input) {
+      this.microphoneInput = null;
+    }
     return this.microphoneInput;
   },
 
@@ -429,13 +432,15 @@ class MicrophoneInput {
     this.audioContext = null;
     this.mediaStreamSource = null;
     this.analyserNode = null;
-    this.audioChunks = [];
-    this.lastChunk = null;
+    this.capture = null;
+    this.nextCapture = null;
+    this.rotationTimer = null;
+    this.captureLimitTimer = null;
+    this.disposed = false;
     this.messageSent = false;
     this.lastAudioTime = null;
     this.waitingTimer = null;
     this.silenceStartTime = null;
-    this.hasStartedRecording = false;
     this.analysisFrame = null;
     this.selectedDeviceId = "";
     this._status = Status.INACTIVE;
@@ -471,28 +476,17 @@ class MicrophoneInput {
           channelCount: 1,
         },
       });
+      if (this.disposed) {
+        stream.getTracks().forEach((track) => track.stop());
+        return false;
+      }
 
       this.selectedDeviceId = selectedDevice?.deviceId || "";
       this.mediaStream = stream;
-      this.mediaRecorder = new MediaRecorder(stream);
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (
-          event.data.size > 0 &&
-          (this.status === Status.RECORDING || this.status === Status.WAITING)
-        ) {
-          if (this.lastChunk) {
-            this.audioChunks.push(this.lastChunk);
-            this.lastChunk = null;
-          }
-          this.audioChunks.push(event.data);
-        } else if (this.status === Status.LISTENING) {
-          this.lastChunk = event.data;
-        }
-      };
-
       this.setupAudioAnalysis(stream);
       return true;
     } catch (error) {
+      if (this.disposed) return false;
       console.error("[Whisper STT] Microphone initialization failed", error);
       globalThis.toast?.(
         "Failed to access the microphone. Please check browser permissions.",
@@ -505,10 +499,6 @@ class MicrophoneInput {
   }
 
   handleStatusChange(previousStatus, nextStatus) {
-    if (nextStatus !== Status.RECORDING) {
-      this.lastChunk = null;
-    }
-
     switch (nextStatus) {
       case Status.INACTIVE:
         this.handleInactiveState();
@@ -529,6 +519,7 @@ class MicrophoneInput {
   }
 
   handleInactiveState() {
+    this.clearCaptureTimers();
     this.stopRecording();
     this.stopAudioAnalysis();
     clearTimeout(this.waitingTimer);
@@ -536,23 +527,29 @@ class MicrophoneInput {
   }
 
   handleListeningState() {
-    this.stopRecording();
-    this.audioChunks = [];
-    this.hasStartedRecording = false;
     this.silenceStartTime = null;
     this.lastAudioTime = null;
     this.messageSent = false;
+    if (!this.disposed && this.mediaStream) {
+      try {
+        this.capture = this.startCapture();
+        this.mediaRecorder = this.capture.recorder;
+        this.scheduleCaptureRotation();
+      } catch (error) {
+        this.captureFailed(error);
+        return;
+      }
+    }
     this.startAudioAnalysis();
   }
 
   handleRecordingState() {
-    if (!this.mediaRecorder) return;
-
-    if (!this.hasStartedRecording && this.mediaRecorder.state !== "recording") {
-      this.hasStartedRecording = true;
-      this.mediaRecorder.start(1000);
-    }
-
+    // Keep the already-running listening capture, including its container header
+    // and pre-speech samples. VAD changes must never discard encoded chunks.
+    this.clearCaptureTimers();
+    this.captureLimitTimer = setTimeout(() => {
+      this.captureFailed(new Error("Voice recording exceeds the 10-minute limit. Please record a shorter message."));
+    }, Math.max(0, 600000 - (Date.now() - (this.capture?.startedAt || Date.now()))));
     clearTimeout(this.waitingTimer);
     this.waitingTimer = null;
   }
@@ -567,8 +564,78 @@ class MicrophoneInput {
   }
 
   handleProcessingState() {
-    this.stopRecording();
+    this.clearCaptureTimers();
     void this.process();
+  }
+
+  startCapture() {
+    const recorder = new MediaRecorder(this.mediaStream);
+    const capture = { recorder, chunks: [], bytes: 0, error: null, startedAt: Date.now() };
+    capture.stopped = new Promise((resolve) => {
+      capture.cancel = resolve;
+      recorder.ondataavailable = (event) => {
+        if (!event.data.size) return;
+        capture.bytes += event.data.size;
+        if (capture.bytes > 50 * 1024 * 1024) {
+          capture.error = new Error("Voice recording exceeds the 50 MiB limit. Please record a shorter message.");
+          this.captureFailed(capture.error);
+          return;
+        }
+        capture.chunks.push(event.data);
+      };
+      recorder.onerror = () => {
+        capture.error = new Error("The browser could not encode microphone audio. Please restart the microphone.");
+        this.captureFailed(capture.error);
+      };
+      recorder.onstop = () => resolve();
+    });
+    recorder.start(250);
+    return capture;
+  }
+
+  scheduleCaptureRotation() {
+    // Overlap complete recordings while idle instead of retaining individual
+    // WebM/MP4 fragments, which need not have their own decoder headers.
+    this.rotationTimer = setTimeout(() => {
+      if (this.status !== Status.LISTENING || this.disposed) return;
+      try {
+        this.nextCapture = this.startCapture();
+        this.rotationTimer = setTimeout(() => {
+          if (this.status !== Status.LISTENING || this.disposed) return;
+          const previous = this.capture;
+          this.capture = this.nextCapture;
+          this.nextCapture = null;
+          this.mediaRecorder = this.capture.recorder;
+          this.finishCapture(previous);
+          this.scheduleCaptureRotation();
+        }, 1000);
+      } catch (error) {
+        this.captureFailed(error);
+      }
+    }, 1000);
+  }
+
+  clearCaptureTimers() {
+    clearTimeout(this.rotationTimer);
+    clearTimeout(this.captureLimitTimer);
+    this.rotationTimer = null;
+    this.captureLimitTimer = null;
+    if (this.nextCapture) {
+      this.finishCapture(this.nextCapture);
+      this.nextCapture.cancel();
+      this.nextCapture = null;
+    }
+  }
+
+  finishCapture(capture) {
+    if (capture?.recorder.state === "recording") capture.recorder.stop();
+    return capture?.stopped;
+  }
+
+  captureFailed(error) {
+    if (this.disposed || this.status === Status.INACTIVE) return;
+    window.toastFetchError?.("Microphone error", error);
+    this.owner.stop();
   }
 
   setupAudioAnalysis(stream) {
@@ -635,10 +702,7 @@ class MicrophoneInput {
   }
 
   stopRecording() {
-    if (this.mediaRecorder?.state === "recording") {
-      this.mediaRecorder.stop();
-      this.hasStartedRecording = false;
-    }
+    this.finishCapture(this.capture);
   }
 
   densify(value) {
@@ -646,18 +710,19 @@ class MicrophoneInput {
   }
 
   async process() {
-    if (this.audioChunks.length === 0) {
-      if (this.status === Status.PROCESSING) {
-        this.status = Status.LISTENING;
-      }
-      return;
-    }
-
-    const audioBlob = new Blob(this.audioChunks, { type: "audio/wav" });
-    const audio = await this.convertBlobToBase64(audioBlob);
-    if (this.status === Status.INACTIVE) return;
-
+    const capture = this.capture;
     try {
+      // stop() queues one last dataavailable before stop. Await it even though
+      // status is already PROCESSING; it can contain all of a short utterance.
+      await this.finishCapture(capture);
+      if (this.disposed || this.status !== Status.PROCESSING) return;
+      if (capture?.error) throw capture.error;
+      if (!capture?.chunks.length) throw new Error("The microphone produced no audio. Please try recording again.");
+      const audioBlob = new Blob(capture.chunks, {
+        type: capture.recorder.mimeType || capture.chunks[0].type,
+      });
+      const audio = await this.convertBlobToBase64(audioBlob);
+      if (this.disposed || this.status !== Status.PROCESSING) return;
       const controller = new AbortController();
       this.transcriptionController = controller;
       const result = await callJsonApi(`/plugins/${PLUGIN_NAME}/transcribe`, {
@@ -675,7 +740,7 @@ class MicrophoneInput {
       window.toastFetchError?.("Transcription error", error);
     } finally {
       this.transcriptionController = null;
-      this.audioChunks = [];
+      if (this.capture === capture) this.capture = null;
       if (this.status === Status.PROCESSING) {
         this.status = Status.LISTENING;
       }
@@ -712,7 +777,7 @@ class MicrophoneInput {
 
   async toggle() {
     const hasPermission = await this.requestPermission();
-    if (!hasPermission) return;
+    if (!hasPermission || this.disposed) return;
 
     if (
       this.status === Status.INACTIVE ||
@@ -729,7 +794,11 @@ class MicrophoneInput {
   }
 
   dispose() {
+    this.disposed = true;
     this.transcriptionController?.abort();
+    this.clearCaptureTimers();
+    this.stopRecording();
+    this.capture?.cancel?.();
     clearTimeout(this.waitingTimer);
     this.waitingTimer = null;
     this.stopAudioAnalysis();
@@ -757,9 +826,7 @@ class MicrophoneInput {
     this.mediaStreamSource = null;
     this.analyserNode = null;
     this.audioContext = null;
-    this.audioChunks = [];
-    this.lastChunk = null;
-    this.hasStartedRecording = false;
+    this.capture = null;
   }
 }
 

@@ -2,6 +2,12 @@ import asyncio
 import base64
 import io
 import json
+from email.parser import BytesParser
+from email.policy import default
+from pathlib import Path
+import shutil
+import struct
+import subprocess
 import wave
 
 import httpx
@@ -37,26 +43,59 @@ def transport(monkeypatch, handler):
     monkeypatch.setattr(speech.httpx, "AsyncClient", lambda **kwargs: client(transport=mock, **kwargs))
 
 
+def assert_pcm_wav(audio):
+    assert audio[:4] == b"RIFF" and audio[8:12] == b"WAVE"
+    assert struct.unpack_from("<I", audio, 4)[0] == len(audio) - 8
+    assert audio[36:40] == b"data"
+    assert struct.unpack_from("<I", audio, 40)[0] == len(audio) - 44
+    with wave.open(io.BytesIO(audio), "rb") as wav:
+        assert (wav.getnchannels(), wav.getframerate(), wav.getsampwidth()) == (1, 16000, 2)
+        frames = wav.readframes(wav.getnframes())
+        assert len(frames) == wav.getnframes() * 2 > 0
+        assert any(frames)
+    return frames
+
+
+@pytest.fixture
+def ffmpeg():
+    binary = shutil.which("ffmpeg")
+    if not binary:
+        pytest.skip("Real codec tests require ffmpeg; mandatory in Linux speech compatibility CI.")
+    return binary
+
+
+@pytest.fixture(params=["wav", "webm", "mp4", "ogg", "flac", "mp3"])
+def encoded_audio(request, tmp_path, ffmpeg):
+    path = tmp_path / ("tone." + request.param)
+    codec = {"webm": "libopus", "mp4": "aac", "ogg": "libopus", "flac": "flac", "mp3": "libmp3lame"}
+    subprocess.run([
+        ffmpeg, "-nostdin", "-v", "error", "-f", "lavfi",
+        "-i", "sine=frequency=440:sample_rate=48000:duration=0.2", "-ac", "2",
+        "-c:a", codec.get(request.param, "pcm_s16le"), str(path),
+    ], check=True, capture_output=True, timeout=20)
+    return path.read_bytes()
+
+
 @pytest.mark.parametrize("key", ["", "test-only-key"])
 @pytest.mark.parametrize("language", [None, "en"])
-@pytest.mark.parametrize("audio,filename,mime", [
-    (wav_bytes(), "microphone.wav", "audio/wav"),
-    (b"\x1a\x45\xdf\xa3browser-fixture", "microphone.webm", "audio/webm"),
-    (b"\x00\x00\x00\x18ftypbrowser-fixture", "microphone.mp4", "audio/mp4"),
-])
-def test_transcription_maps_browser_audio_model_auth_and_language(monkeypatch, key, language, audio, filename, mime):
+def test_transcription_maps_browser_audio_model_auth_and_language(monkeypatch, key, language, encoded_audio):
     def handler(request):
         assert str(request.url) == "http://speech.example/v1/audio/transcriptions"
         assert request.headers.get("Authorization", "") == ("Bearer " + key if key else "")
         assert b'name="model"' in request.content
         assert b"test-model" in request.content
-        assert f'filename="{filename}"'.encode() in request.content
-        assert f"Content-Type: {mime}".encode() in request.content
-        assert audio in request.content
+        multipart = BytesParser(policy=default).parsebytes(
+            b"Content-Type: " + request.headers["Content-Type"].encode() + b"\r\n\r\n" + request.content
+        )
+        file = next(part for part in multipart.iter_parts() if part.get_filename())
+        assert file.get_filename() == "microphone.wav"
+        assert file.get_content_type() == "audio/wav"
+        frames = assert_pcm_wav(file.get_payload(decode=True))
+        assert 3000 <= len(frames) // 2 <= 4000
         assert (b'name="language"' in request.content) == bool(language)
         return httpx.Response(200, json={"text": "Fixture transcript", "language": language or "en"})
     transport(monkeypatch, handler)
-    result = asyncio.run(speech.transcribe(base64.b64encode(audio).decode(), config(external_api_key=key), language))
+    result = asyncio.run(speech.transcribe(base64.b64encode(encoded_audio).decode(), config(external_api_key=key), language))
     assert result == {"text": "Fixture transcript", "language": language or "en"}
 
 
@@ -123,7 +162,7 @@ def test_provider_errors_do_not_redirect_or_disclose_response_bodies(monkeypatch
 
 
 @pytest.mark.parametrize("payload", [b"not JSON", b"[]", b'{"text":42}', b'{"text":"ok","language":42}'])
-def test_bad_transcription_responses_are_rejected(monkeypatch, payload):
+def test_bad_transcription_responses_are_rejected(monkeypatch, payload, ffmpeg):
     transport(monkeypatch, lambda request: httpx.Response(200, content=payload))
     with pytest.raises(ValueError, match="External STT"):
         asyncio.run(speech.transcribe(base64.b64encode(wav_bytes()).decode(), config(), None))
@@ -179,3 +218,141 @@ def test_network_errors_are_sanitized(monkeypatch):
     with pytest.raises(ValueError, match="connection failed") as raised:
         asyncio.run(speech.synthesize(["Fixture"], config(), 1))
     assert "private connection detail" not in str(raised.value)
+
+
+@pytest.mark.parametrize("audio", [
+    b"RIFF" + b"\x00" * 4 + b"WAVE" + b"\x00" * 20,
+    b"\x1a\x45\xdf\xa3incomplete",
+    b"\x00\x00\x00\x18ftypincomplete",
+    wav_bytes()[:-20],
+])
+def test_real_decoder_rejects_incomplete_recordings_before_upload(monkeypatch, audio, ffmpeg):
+    def unexpected(request):
+        pytest.fail("Invalid audio must never reach the external service")
+    transport(monkeypatch, unexpected)
+    with pytest.raises(ValueError, match="decode|samples"):
+        asyncio.run(speech.transcribe(base64.b64encode(audio).decode(), config(), None))
+
+
+@pytest.mark.parametrize("encoded,error", [
+    ("", "empty"), ("not valid base64!", "base64"),
+    (base64.b64encode(b"invalid").decode(), "unsupported"),
+])
+def test_invalid_input_never_starts_converter_or_provider(monkeypatch, encoded, error):
+    async def unexpected(*args, **kwargs):
+        pytest.fail("Invalid input must not start a converter/provider")
+    monkeypatch.setattr(speech, "_pcm_wav", unexpected)
+    monkeypatch.setattr(speech, "_request", unexpected)
+    with pytest.raises(ValueError, match=error):
+        asyncio.run(speech.transcribe(encoded, config(), None))
+
+
+@pytest.mark.parametrize("mode,error", [
+    ("failure", "could not decode"), ("empty", "no decodable"),
+    ("odd", "no decodable"), ("timeout", "conversion timed out"),
+    ("oversize", "10 minutes"), ("missing", "requires ffmpeg"),
+])
+def test_converter_failure_timeout_and_output_limits_clean_owned_resources(monkeypatch, mode, error):
+    processes = []
+    paths = []
+    monkeypatch.setattr(speech, "STT_CONVERSION_TIMEOUT", 0.01 if mode == "timeout" else 5)
+    monkeypatch.setattr(speech, "MAX_STT_SECONDS", 1)
+
+    class Process:
+        returncode = None
+        killed = False
+        stdout = None
+        sent = False
+
+        def __init__(self):
+            self.stdout = self
+
+        async def read(self, _):
+            if mode == "timeout":
+                await asyncio.Event().wait()
+            if self.sent:
+                return b""
+            self.sent = True
+            return {
+                "empty": b"", "odd": b"x", "failure": b"\x00\x01",
+                "oversize": b"x" * (speech.STT_SAMPLE_RATE * 2 + 1),
+            }[mode]
+
+        async def wait(self):
+            self.returncode = -9 if self.killed else 1 if mode == "failure" else 0
+            return self.returncode
+
+        async def communicate(self):
+            await self.wait()
+            return b"", b""
+
+        def kill(self):
+            self.killed = True
+
+    async def spawn(*args, **kwargs):
+        path = Path(args[args.index("-i") + 1])
+        paths.append(path)
+        assert path.read_bytes() == b"fixture"
+        assert kwargs["stderr"] == asyncio.subprocess.DEVNULL
+        assert "-xerror" in args and "-protocol_whitelist" in args
+        if mode == "missing":
+            raise FileNotFoundError("private local detail")
+        process = Process()
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(speech.asyncio, "create_subprocess_exec", spawn)
+    with pytest.raises(ValueError, match=error):
+        asyncio.run(speech._pcm_wav(b"fixture"))
+    assert paths and all(not path.parent.exists() for path in paths)
+    if processes:
+        assert processes[0].returncode is not None
+        assert processes[0].killed == (mode in ("oversize", "timeout"))
+
+
+@pytest.mark.parametrize("during_spawn", [False, True])
+def test_converter_cancellation_reaps_owned_process_and_removes_input(monkeypatch, during_spawn):
+    async def scenario():
+        ready, release = asyncio.Event(), asyncio.Event()
+        paths, processes = [], []
+
+        class Process:
+            returncode = None
+            killed = False
+
+            def __init__(self):
+                self.stdout = self
+
+            async def read(self, _):
+                ready.set()
+                await asyncio.Event().wait()
+
+            def kill(self):
+                self.killed = True
+                self.returncode = -9
+
+            async def wait(self):
+                return self.returncode
+
+            async def communicate(self):
+                return b"", b""
+
+        async def spawn(*args, **kwargs):
+            paths.append(Path(args[args.index("-i") + 1]))
+            if during_spawn:
+                ready.set()
+                await release.wait()
+            process = Process()
+            processes.append(process)
+            return process
+
+        monkeypatch.setattr(speech.asyncio, "create_subprocess_exec", spawn)
+        task = asyncio.create_task(speech._pcm_wav(b"fixture"))
+        await ready.wait()
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert len(processes) == 1 and processes[0].killed
+        assert all(not path.parent.exists() for path in paths)
+    asyncio.run(scenario())

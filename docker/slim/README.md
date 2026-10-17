@@ -163,7 +163,11 @@ guard, so startup synchronization cannot replace it with an unguarded older mana
 Legacy/all-enabled images keep their existing update behavior.
 Configure external STT/TTS in their existing plugin settings using base URL,
 model, optional API key, and TTS voice; see the plugin READMEs for upload/privacy
-semantics. External GPU-provider connectivity is unchanged.
+semantics. External STT converts browser media locally with bundled FFmpeg to
+finalized mono16k signed16 PCM WAV, including when local Whisper is excluded.
+The speech preflight checks real native MediaRecorder output and the pinned
+whisper.cpp server decoder without downloading a recognition model.
+External GPU-provider connectivity is unchanged.
 
 Open [Build Agent Zero Image Profiles](https://github.com/GitLogos/agent-zero/actions/workflows/image-footprint.yml)
 and choose **Run workflow**, leaving the branch selector on **main**. Its small
